@@ -134,8 +134,9 @@ def split_by_conversation(
 
 
 #: Phrases that mark a conversation as ending because the candidate withdrew,
-#: rather than because an interview was booked.
-_OPT_OUT_MARKERS = (
+#: rather than because an interview was booked. Also read by the fine-tuning
+#: dataset builder, which needs the same distinction per decision point.
+OPT_OUT_MARKERS = (
     "no longer interested",
     "not interested",
     "remove me",
@@ -151,7 +152,7 @@ def _is_opt_out(conversation: dict) -> bool:
         marker in turn["text"].lower()
         for turn in conversation["turns"]
         if turn["speaker"] == "candidate"
-        for marker in _OPT_OUT_MARKERS
+        for marker in OPT_OUT_MARKERS
     )
 
 

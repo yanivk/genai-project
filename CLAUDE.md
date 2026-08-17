@@ -586,6 +586,8 @@ Runtime context goes LAST — it changes per request.
 - Load with `open(path, encoding="utf-8").read()` — never inline a prompt in a `.py` file.
 - Every few-shot example is drawn from the **training split** of the dataset (§10), never the
   held-out split.
+- `# Examples` is the one optional section. `exit_advisor_finetuned.txt` omits it on purpose
+  (§11.8) — the fine-tuned model learned the behaviour those examples were teaching.
 - **`temperature=0` for every decision-making call.** Only candidate-facing message generation
   may use a higher temperature, and only if it is worth the loss of reproducibility.
 
@@ -645,17 +647,26 @@ and `Course23/Nlp.ipynb`.
 
 ## 11. Fine-tuning rules
 
-No course precedent — this module is written against the OpenAI SDK directly.
+No course precedent — the spec requires it anyway (`page 3.png`: *"Conversation Exit Advisor
+should be fine-tuned"*, `Page 5.png`: *"OpenAI account — API keys for embeddings, chat, and
+fine-tuning"*). It is an OpenAI job, not a scikit-learn `fit`, and this module is written
+against the OpenAI SDK directly.
 
 1. **Train on the training split only.** The held-out conversations from §10 never enter the
    JSONL. This is the easiest way to silently invalidate the whole evaluation.
-2. Training rows use the chat format, with the same system prompt the Exit Advisor uses at
-   inference time:
+2. **A training row is an inference call.** The conversation lives in the *system* prompt's
+   `# Context` section (§8), so the row is `system` = the rendered prompt, `user` = the same
+   fixed directive the advisor sends, `assistant` = the target JSON:
    ```jsonl
-   {"messages":[{"role":"system","content":"..."},{"role":"user","content":"<rendered history>"},{"role":"assistant","content":"{\"should_end\": true, \"reason\": \"...\"}"}]}
+   {"messages":[{"role":"system","content":"# Identity ... # Context\n<rendered history>"},{"role":"user","content":"Return your JSON verdict for the conversation above."},{"role":"assistant","content":"{\"should_end\":true,\"reason\":\"...\"}"}]}
    ```
+   Both halves come from `exit_advisor.build_system_text()` and `exit_advisor.DIRECTIVE`,
+   called rather than re-typed — train/serve skew here would be invisible and expensive.
 3. **The assistant target is the exact JSON contract from §9** — the fine-tuned model must be a
    drop-in replacement for the prompted one.
+   `reason` has no ground truth in the dataset, so it is generated deterministically from the
+   situation (`dataset._reason_for`). It is explanatory only — `resolve_action()` reads the
+   boolean — but the model is trained to emit it, so it must be consistent.
 4. Both `end` cases must be represented: booked-and-confirmed *and* candidate-opted-out (§6.1).
 5. Generated JSONL goes to `data/*.jsonl`, which is **gitignored** — it is derived, and it is
    easy to accidentally commit a version built from the wrong split.
@@ -664,6 +675,18 @@ No course precedent — this module is written against the OpenAI SDK directly.
 7. **Always keep the fallback path working.** When `FT_EXIT_ADVISOR_MODEL` is empty, the Exit
    Advisor runs on `OPENAI_MODEL` with few-shot prompting. Never let the app hard-fail because
    a fine-tuning job is missing, expired, or still running.
+8. **The prompt follows the model — two files, one contract.**
+
+   | `FT_EXIT_ADVISOR_MODEL` | Model | Prompt file |
+   |---|---|---|
+   | empty | `OPENAI_MODEL` | `exit_advisor.txt` — 7 worked examples |
+   | set | the fine-tuned id | `exit_advisor_finetuned.txt` — identity, instructions, no examples |
+
+   Replacing few-shot examples with learned behaviour is the *reason* to fine-tune; carrying
+   them into every training row would pay for them twice and teach nothing. `build_system_text()`
+   picks the file from `settings.is_finetuned`, and the dataset builder forces `finetuned=True`,
+   so training and serving cannot drift apart. The output contract is identical in both files —
+   that is what makes the swap a drop-in.
 
 ---
 
@@ -678,7 +701,8 @@ pip install -r requirements.txt
 # Offline steps — run once, in this order
 python scripts/seed_database.py          # data/tech.db
 python scripts/build_vector_store.py     # data/chroma/
-python scripts/run_finetuning.py         # launches the OpenAI job, prints the model id
+python scripts/run_finetuning.py --dry-run   # build + inspect the JSONL, spend nothing
+python scripts/run_finetuning.py             # launches the OpenAI job, prints the model id
 
 # Run
 python -m app.main                                    # CLI chat loop

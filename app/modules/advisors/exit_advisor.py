@@ -10,6 +10,10 @@ prompting otherwise. The fallback must always keep working: the app never
 hard-fails because a fine-tuning job is missing or still running
 (CLAUDE.md 11.7).
 
+The prompt follows the model: few-shot examples for the base model, a condensed
+file for the fine-tuned one. See :data:`PROMPT_FEWSHOT` and
+:data:`PROMPT_FINETUNED`.
+
 Critical semantics: ``should_end`` is True for BOTH terminal outcomes — the
 interview is confirmed, and the candidate opted out. In the dataset, ``end`` is
 the last recruiter turn of every conversation: 11 happy endings and 4 opt-outs.
@@ -32,7 +36,37 @@ logger = logging.getLogger(__name__)
 
 #: Short directive in the user turn. The conversation itself lives in the system
 #: prompt's `# Context` section, following the Course20 layout.
-_DIRECTIVE = "Return your JSON verdict for the conversation above."
+DIRECTIVE = "Return your JSON verdict for the conversation above."
+
+#: Two prompt files, one per model.
+#:
+#: The few-shot file carries seven worked examples that teach the base model the
+#: `end`-is-terminal semantics. Replacing those examples with learned behaviour is
+#: the whole point of fine-tuning, so the fine-tuned model gets a condensed file:
+#: same identity, same output contract, no examples.
+#:
+#: Which one is used follows `settings.is_finetuned`, and the fine-tuning dataset
+#: builder calls :func:`build_system_text` with ``finetuned=True`` — so the rows
+#: the model trains on and the messages it later receives are identical by
+#: construction, not by two places being kept in sync.
+PROMPT_FEWSHOT = "exit_advisor"
+PROMPT_FINETUNED = "exit_advisor_finetuned"
+
+
+def build_system_text(conversation_text: str, finetuned: bool | None = None) -> str:
+    """Render the Exit Advisor system prompt for one conversation.
+
+    Args:
+        conversation_text: History rendered as plain text, one
+            ``Speaker: message`` line per turn.
+        finetuned: Force a prompt variant. Defaults to ``settings.is_finetuned``,
+            which is what every runtime call wants; the fine-tuning dataset
+            builder passes True explicitly.
+    """
+    if finetuned is None:
+        finetuned = settings.is_finetuned
+    name = PROMPT_FINETUNED if finetuned else PROMPT_FEWSHOT
+    return fill(load_prompt(name), conversation=conversation_text)
 
 
 def build_exit_chain():
@@ -66,10 +100,10 @@ def should_end(conversation_text: str) -> ExitVerdict:
         conservative "keep talking" verdict rather than raising — one flaky
         advisor must not end a candidate's conversation.
     """
-    system_text = fill(load_prompt("exit_advisor"), conversation=conversation_text)
+    system_text = build_system_text(conversation_text)
     try:
         raw = build_exit_chain().invoke(
-            {"system_text": system_text, "input": _DIRECTIVE}
+            {"system_text": system_text, "input": DIRECTIVE}
         )
         return ExitVerdict.model_validate(raw)
     except Exception:  # noqa: BLE001 - degrade instead of killing the turn

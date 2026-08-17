@@ -15,8 +15,6 @@ model with few-shot prompting.
 The training split must match the one the evaluation notebook holds out, or the
 reported accuracy is meaningless. Both come from
 ``app.modules.evaluation.dataset.split_by_conversation`` with the same seed.
-
-STATUS: scaffolding. The CLI is final; the pipeline steps are not implemented yet.
 """
 
 from __future__ import annotations
@@ -44,6 +42,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--test-size", type=int, default=5, help="Conversations held out.")
     parser.add_argument("--seed", type=int, default=42, help="Split seed. Must match the notebook.")
+    parser.add_argument("-y", "--yes", action="store_true", help="Skip the billing confirmation.")
     args = parser.parse_args(argv)
 
     conversations = load_conversations()
@@ -64,6 +63,17 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     settings.require_api_key()
+
+    # This is the only line in the project that spends money without being asked
+    # to a second time. Make it ask.
+    if not args.yes:
+        answer = input(
+            f"\nLaunch a fine-tuning job on {settings.ft_base_model}? "
+            "This is billed by OpenAI. [y/N] "
+        )
+        if answer.strip().lower() not in {"y", "yes"}:
+            print("Aborted.")
+            return 0
 
     file_id = upload_training_file(jsonl_path)
     print(f"Uploaded file: {file_id}")
