@@ -12,8 +12,10 @@ database.
 from __future__ import annotations
 
 import datetime as dt
+import importlib
 import json
 import re
+import sys
 from pathlib import Path
 
 import httpx
@@ -426,6 +428,55 @@ class TestHistoryRendering:
 
     def test_empty_history_is_empty_string(self):
         assert render_history([]) == ""
+
+
+class TestDeployedDependencies:
+    """requirements.txt is what Streamlit Cloud installs — keep it runtime-only."""
+
+    #: Needed by the notebook, the tests or the offline scripts, never by the app.
+    DEV_ONLY = ["PyPDF2", "sklearn", "matplotlib", "seaborn", "pytest", "jupyter", "ipykernel"]
+
+    def test_app_imports_without_the_dev_dependencies(self):
+        """The app must run on requirements.txt alone.
+
+        Adding a top-level `import matplotlib` somewhere under app/ would work
+        locally and break the deploy. This catches it offline.
+        """
+        blocked = {name.split(".")[0] for name in self.DEV_ONLY}
+
+        class Block:
+            def find_module(self, name, path=None):
+                return self if name.split(".")[0] in blocked else None
+
+            def load_module(self, name):
+                raise ImportError(f"{name} is a dev-only dependency")
+
+        guard = Block()
+        sys.meta_path.insert(0, guard)
+        try:
+            for module in (
+                "streamlit_app.utils",
+                "app.modules.main_agent.orchestrator",
+                "app.modules.embedding.retriever",
+                "app.modules.database.engine",
+            ):
+                importlib.reload(importlib.import_module(module))
+        finally:
+            sys.meta_path.remove(guard)
+
+    @pytest.mark.parametrize("package", DEV_ONLY)
+    def test_dev_dependencies_are_not_in_the_deployed_file(self, package):
+        runtime = (ROOT_DIR / "requirements.txt").read_text(encoding="utf-8")
+        pinned = [
+            line.split("==")[0].strip().lower()
+            for line in runtime.splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+        assert package.lower() not in pinned
+
+    def test_dev_file_pulls_in_the_runtime_file(self):
+        dev = (ROOT_DIR / "requirements-dev.txt").read_text(encoding="utf-8")
+        assert "-r requirements.txt" in dev
 
 
 class TestMainAgentOutputRecovery:

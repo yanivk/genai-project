@@ -109,8 +109,14 @@ Every turn resolves to exactly one action:
 
 ### Prerequisites
 
-- Python >= 3.11
+- **Python 3.13** — see the note below
 - An OpenAI API key
+
+> **Use 3.13, not 3.14.** The pins come from the course and none of them publish
+> wheels for 3.14 yet; `pip` then tries to build `tiktoken` from source and stops at
+> `error: can't find Rust compiler`. Bumping the pins instead would mean re-verifying
+> every taught snippet in `CLAUDE.md` §4, which is the one thing this project must not
+> do casually.
 
 ### Installation
 
@@ -118,14 +124,25 @@ Every turn resolves to exactly one action:
 git clone git@github.com:yanivk/genai-project.git
 cd genai-project
 
-python -m venv .venv
+py -3.13 -m venv .venv          # macOS / Linux: python3.13 -m venv .venv
 # Windows
 .\.venv\Scripts\Activate.ps1
 # macOS / Linux
 source .venv/bin/activate
 
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 ```
+
+Dependencies are split in two:
+
+| File | Contents | Who installs it |
+|---|---|---|
+| `requirements.txt` | What the app imports at runtime | Streamlit Community Cloud |
+| `requirements-dev.txt` | The above, plus the notebook, the tests and the offline scripts | You, locally |
+
+The deployed app never imports `scikit-learn`, `matplotlib`, `jupyter` or `PyPDF2`, so
+shipping them to Cloud only costs build time. A test asserts the app still imports with
+all of them unavailable, so the split cannot rot unnoticed.
 
 ### Configuration
 
@@ -362,7 +379,13 @@ genai-project/
 
 Deployed to **Streamlit Community Cloud**, pointing at `streamlit_app/streamlit_main.py`.
 
-Two things make that work:
+> **Select Python 3.13 under "Advanced settings" when you create the app.** Cloud
+> defaults to a newer interpreter, and on 3.14 the build dies compiling `tiktoken`
+> (`can't find Rust compiler`) and `cffi` (`fatal error: ffi.h: No such file`). The
+> Python version [cannot be changed after deployment](https://docs.streamlit.io/deploy/streamlit-community-cloud/manage-your-app/upgrade-python) —
+> getting it wrong means deleting the app and redeploying, so set it up front.
+
+Four things make that work:
 
 - **`data/tech.db` and `data/vector_store.json` are committed.** Streamlit Cloud cannot run
   the offline scripts, so those artifacts ship with the repo. That is also why the database
@@ -372,7 +395,10 @@ Two things make that work:
   regenerated from the 94 KB JSON seed. Chroma is still what stores and answers every
   query — only the way it gets populated changes.
 - **Secrets come from the Streamlit Secrets UI.** `app/config.py` reads `st.secrets` first
-  and falls back to environment variables, so the same code runs in both places.
+  and falls back to environment variables, so the same code runs in both places. Paste
+  `OPENAI_API_KEY = "sk-..."` there; without it the app starts but every turn fails.
+- **`requirements.txt` holds runtime dependencies only.** Cloud installs that file, and the
+  notebook toolchain has no business in a deploy.
 
 ---
 <br></br>
