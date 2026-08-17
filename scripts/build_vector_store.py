@@ -1,15 +1,14 @@
-"""Build the Chroma index from the job description PDF.
+"""Build the vector store from the job description PDF.
 
 The spec's offline embedding step. Run once::
 
     python scripts/build_vector_store.py
 
-Writes into data/chroma/, which is committed so Streamlit Community Cloud — which
-cannot run this script — still has an index to query.
+Writes data/vector_store.json, which IS committed so Streamlit Community Cloud —
+which cannot run this script — still has an index to query. The retriever rebuilds
+an ephemeral Chroma collection from it at first use.
 
 Costs a small number of embedding tokens. Nothing else in the project triggers it.
-
-STATUS: scaffolding. The CLI is final; the indexing logic is not implemented yet.
 """
 
 from __future__ import annotations
@@ -28,22 +27,18 @@ from app.modules.embedding.indexer import build_index  # noqa: E402
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument(
-        "--keep",
-        action="store_true",
-        help="Append to the existing collection instead of rebuilding it. Risks duplicates.",
-    )
-    args = parser.parse_args(argv)
+    parser.parse_args(argv)
 
     settings.require_api_key()
 
     print(f"PDF        : {settings.job_description_pdf}")
     print(f"Model      : {settings.embedding_model}")
-    print(f"Chroma path: {settings.chroma_path}")
+    print(f"Output     : {settings.vector_store_json}")
     print(f"Collection : {settings.chroma_collection}")
 
-    count = build_index(reset=not args.keep)
-    print(f"Indexed {count} chunks.")
+    count = build_index()
+    size_kb = settings.vector_store_json.stat().st_size / 1024
+    print(f"Indexed {count} chunks -> {size_kb:,.1f} KB")
     return 0
 
 

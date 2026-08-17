@@ -24,13 +24,14 @@ Schema note: SQLite has no DATE or TIME type. ``date`` is stored as
 correctly as text.
 
 Run via ``python scripts/seed_database.py``. Never imported for its side effects.
-
-STATUS: scaffolding. Signatures are final; bodies are not implemented yet.
 """
 
 from __future__ import annotations
 
+import random
+import sqlite3
 from datetime import date as date_type
+from datetime import timedelta
 from pathlib import Path
 
 #: Matches dbo.Schedule from data/db_Tech.sql.
@@ -76,7 +77,43 @@ def seed(db_path: Path, seed_value: int = 42, overwrite: bool = False) -> int:
     Returns:
         The number of rows inserted.
     """
-    raise NotImplementedError
+    db_path = Path(db_path)
+    if db_path.exists():
+        if not overwrite:
+            raise FileExistsError(
+                f"{db_path} already exists. Pass --overwrite to rebuild it."
+            )
+        db_path.unlink()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    rng = random.Random(seed_value)
+    rows = []
+    day = START_DATE
+    while day <= END_DATE:
+        if day.weekday() not in EXCLUDED_WEEKDAYS:
+            iso_day = day.isoformat()
+            for hour in range(FIRST_HOUR, LAST_HOUR + 1):
+                slot_time = f"{hour:02d}:00:00"
+                for position in POSITIONS:
+                    available = int(rng.random() < AVAILABILITY_RATE)
+                    rows.append((iso_day, slot_time, position, available))
+        day += timedelta(days=1)
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(CREATE_TABLE_SQL)
+        # The advisor always filters on position + availability and orders by
+        # date/time; without this index every lookup is a full scan.
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_schedule_lookup "
+            "ON Schedule (position, available, date, time);"
+        )
+        conn.executemany(
+            "INSERT INTO Schedule (date, time, position, available) VALUES (?, ?, ?, ?);",
+            rows,
+        )
+        conn.commit()
+
+    return len(rows)
 
 
 def summarize(db_path: Path) -> str:
@@ -85,4 +122,40 @@ def summarize(db_path: Path) -> str:
     Reports the row count, the date range, the distinct weekdays present and the
     share of available slots — enough to sanity-check a seed at a glance.
     """
-    raise NotImplementedError
+    with sqlite3.connect(Path(db_path)) as conn:
+        total, first, last, free = conn.execute(
+            "SELECT COUNT(*), MIN(date), MAX(date), SUM(available) FROM Schedule;"
+        ).fetchone()
+        per_position = conn.execute(
+            "SELECT position, COUNT(*), SUM(available) FROM Schedule GROUP BY position ORDER BY position;"
+        ).fetchall()
+        days = [
+            date_type.fromisoformat(d)
+            for (d,) in conn.execute("SELECT DISTINCT date FROM Schedule;").fetchall()
+        ]
+
+    weekdays = sorted({d.strftime("%A") for d in days}, key=lambda n: _WEEKDAY_ORDER.index(n))
+    lines = [
+        f"  rows          : {total:,}",
+        f"  date range    : {first} -> {last}",
+        f"  weekdays      : {', '.join(weekdays)}",
+        f"  hours         : {FIRST_HOUR:02d}:00-{LAST_HOUR:02d}:00",
+        f"  available     : {free:,} / {total:,} ({free / total:.1%})",
+        "  per position  :",
+    ]
+    lines += [
+        f"      {name:<12} {count:>6,} slots, {avail:>6,} free ({avail / count:.1%})"
+        for name, count, avail in per_position
+    ]
+    return "\n".join(lines)
+
+
+_WEEKDAY_ORDER = (
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+)

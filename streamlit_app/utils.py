@@ -1,13 +1,16 @@
 """Rendering and session helpers for the Streamlit app.
 
 Presentation only — nothing here decides anything about the conversation.
-
-STATUS: scaffolding. Signatures are final; bodies are not implemented yet.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
+
+import streamlit as st
+
+from app.config import settings
 
 
 def default_conversation_start() -> str:
@@ -30,6 +33,24 @@ GREETING = (
     "Could you share a bit about your Python experience?"
 )
 
+#: Streamlit session key -> agent memory key. One browser session, one thread.
+SESSION_ID = "streamlit"
+
+#: Badge shown next to each action in the transcript.
+ACTION_BADGES = {
+    "continue": ("💬", "Continuing"),
+    "schedule": ("📅", "Proposing slots"),
+    "end": ("🏁", "Conversation closed"),
+}
+
+
+def _seed_agent_memory() -> None:
+    """Put the greeting into the agent's memory so turn 1 has context."""
+    from app.modules.main_agent.orchestrator import get_history, reset_session
+
+    reset_session(SESSION_ID)
+    get_history(SESSION_ID).add_ai_message(GREETING)
+
 
 def init_session_state() -> None:
     """Seed ``st.session_state`` on first render.
@@ -37,44 +58,47 @@ def init_session_state() -> None:
     Sets up the message list, the session id used to key the agent's memory, and
     the conversation-start anchor.
     """
-    raise NotImplementedError
+    if "messages" not in st.session_state:
+        st.session_state.messages = [{"role": "assistant", "content": GREETING}]
+        _seed_agent_memory()
+
+    st.session_state.setdefault("session_id", SESSION_ID)
+    st.session_state.setdefault("conversation_start", DEFAULT_CONVERSATION_START)
+    st.session_state.setdefault("finished", False)
+    st.session_state.setdefault("last_verdicts", None)
 
 
 def render_history() -> None:
-    """Replay ``st.session_state.messages`` into the chat area.
+    """Replay ``st.session_state.messages`` into the chat area."""
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.write(message["content"])
+            action = message.get("action")
+            if action in ACTION_BADGES:
+                icon, label = ACTION_BADGES[action]
+                st.caption(f"{icon} {label}")
 
-    Course24's pattern: iterate the stored messages and write each one inside
-    ``st.chat_message(role)``.
-    """
-    raise NotImplementedError
 
-
-def append_message(role: str, content: str) -> None:
+def append_message(role: str, content: str, action: str | None = None) -> None:
     """Append a message to the session transcript.
 
     Args:
         role: ``"user"`` for the candidate, ``"assistant"`` for the bot.
         content: The message text.
+        action: The action the Main Agent chose, shown as a badge.
     """
-    raise NotImplementedError
+    entry: dict[str, str] = {"role": role, "content": content}
+    if action:
+        entry["action"] = action
+    st.session_state.messages.append(entry)
 
 
 def reset_conversation() -> None:
     """Clear both the UI transcript and the agent's memory for this session."""
-    raise NotImplementedError
-
-
-def render_sidebar() -> dict:
-    """Draw the sidebar and return the chosen settings.
-
-    Exposes the conversation date anchor, a reset button, and a read-only status
-    panel showing whether the fine-tuned Exit Advisor, the database and the
-    vector index are available.
-
-    Returns:
-        The selected settings, e.g. ``{"conversation_start": "..."}``.
-    """
-    raise NotImplementedError
+    _seed_agent_memory()
+    st.session_state.messages = [{"role": "assistant", "content": GREETING}]
+    st.session_state.finished = False
+    st.session_state.last_verdicts = None
 
 
 def health_check() -> dict[str, tuple[bool, str]]:
@@ -87,4 +111,31 @@ def health_check() -> dict[str, tuple[bool, str]]:
     Returns:
         ``{name: (ok, human readable detail)}``.
     """
-    raise NotImplementedError
+    db_file = Path(settings.db_url.removeprefix("sqlite:///"))
+    # Either the persisted Chroma DB or the committed seed it is rebuilt from.
+    persisted = settings.chroma_path.exists() and any(settings.chroma_path.iterdir())
+    seeded = settings.vector_store_json.is_file()
+    return {
+        "OpenAI API key": (
+            bool(settings.openai_api_key),
+            "set" if settings.openai_api_key else "missing — fill in .env",
+        ),
+        "Schedule database": (
+            db_file.exists(),
+            db_file.name if db_file.exists() else "run: python scripts/seed_database.py",
+        ),
+        "Chroma index": (
+            persisted or seeded,
+            f"{settings.chroma_collection} (persisted)"
+            if persisted
+            else f"{settings.chroma_collection} (rebuilt from seed on first use)"
+            if seeded
+            else "run: python scripts/build_vector_store.py",
+        ),
+        "Exit Advisor": (
+            settings.is_finetuned,
+            "fine-tuned"
+            if settings.is_finetuned
+            else f"few-shot on {settings.openai_model}",
+        ),
+    }

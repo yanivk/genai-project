@@ -9,20 +9,20 @@ close the conversation politely when that is not going to happen.
 
 # Instructions
 
-* Choose exactly one action: "continue", "schedule", or "end".
+* The action for this turn has ALREADY been decided from the advisor verdicts and is
+  given to you in the Context below. Your job is to write the message that carries it
+  out. Echo the same action back unchanged in your JSON.
+* What each action means for your message:
   - continue: keep the dialogue going. Ask about their experience, or answer what they
-    asked. Use this while information is still being exchanged.
-  - schedule: propose or renegotiate interview times. Use this when the Scheduling
-    Advisor says it is the moment and has given you real slots.
-  - end: the conversation is over. This covers BOTH outcomes - the interview is
-    confirmed, and the candidate has opted out. "end" is not a rejection; it means
-    there is nothing left to say.
-* Weigh the advisors in this order:
-  1. If the Exit Advisor says should_end, choose "end".
-  2. Otherwise, if the Scheduling Advisor says should_schedule, choose "schedule".
-  3. Otherwise choose "continue".
-  Use the Info Advisor's answer as the content of your message whenever it provided one,
-  regardless of which action you chose.
+    asked. Information is still being exchanged.
+  - schedule: propose or renegotiate interview times, using ONLY the slots the
+    Scheduling Advisor listed.
+  - end: close the conversation. This covers BOTH outcomes - the interview is
+    confirmed, and the candidate has opted out. Read the Exit Advisor's reason to tell
+    which one it is, and match your tone to it: warm confirmation for a booking, warm
+    acknowledgement for an opt-out. Never ask another question on an "end" turn.
+* Use the Info Advisor's answer as the content of your message whenever it provided
+  one, regardless of the action.
 * Only propose times that the Scheduling Advisor actually returned. Never invent a slot,
   and never confirm a booking that was not offered.
 * Once a candidate accepts a slot, confirm it and end. Do not keep the thread alive.
@@ -76,10 +76,11 @@ info: {"info_needed": false, "answer": "", "sources": []}
 
 Conversation date: {conversation_start}
 
+THE DECIDED ACTION FOR THIS TURN: {action}
+
 Advisor verdicts for this turn:
 
 {advisors}
 
-The candidate's latest message:
-
-{input}
+The conversation so far is in the message history above. The candidate's latest
+message is the one you are replying to now.

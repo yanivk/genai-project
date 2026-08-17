@@ -11,6 +11,18 @@ conversation share a history prefix, so a turn-level split leaks the test set
 into both training and few-shot examples. See CLAUDE.md section 10.
 """
 
-from app.modules.evaluation.dataset import DecisionPoint, load_conversations
+from app.modules.evaluation.dataset import (
+    DecisionPoint,
+    build_decision_points,
+    ending_flavour,
+    load_conversations,
+    split_by_conversation,
+)
 
-__all__ = ["DecisionPoint", "load_conversations"]
+__all__ = [
+    "DecisionPoint",
+    "build_decision_points",
+    "ending_flavour",
+    "load_conversations",
+    "split_by_conversation",
+]

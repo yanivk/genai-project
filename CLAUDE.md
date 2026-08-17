@@ -223,9 +223,57 @@ raises `AttributeError`.
 
 ### 4.5 Multi-agent orchestration — `Course22`, Example 5
 
-No framework. The Main Agent module exposes a plain Python router that invokes the advisor
-executors and dispatches on their JSON verdicts. Keep the routing readable and explicit —
-it is the part a grader reads first.
+No framework. `app/modules/main_agent/orchestrator.py` exposes a plain Python router that
+invokes the advisors and dispatches on their JSON verdicts.
+
+**The action is chosen in code, not by the LLM.** `resolve_action()` applies a fixed
+precedence — **exit beats schedule beats continue** — and the Main Agent is then *told* that
+action and writes the candidate-facing message for it. Two reasons:
+
+1. Asked to weigh the verdicts itself, the model reliably picked `schedule` over `end`
+   whenever both advisors fired — which is exactly the case where the candidate has just
+   accepted a time, so the answer is always `end`. Moving the choice into code took `end`
+   recall from 0.40 to 1.00.
+2. It matches the course's own multi-agent example, where dispatch is a plain Python
+   function rather than a model call.
+
+Deciding first and writing second also means the wording can never contradict the action.
+
+### 4.9 Prompt files carry literal JSON — never `str.format` them
+
+The prompt files contain JSON braces in their few-shot examples, so `str.format` and
+`ChatPromptTemplate` would both try to read `{"should_end": true}` as a template field.
+
+Two rules, both implemented in `app/modules/common.py`:
+
+- Substitute placeholders with `fill()`, which uses `str.replace`.
+- Pass the rendered text into the chain as the **value** of a single `{system_text}`
+  variable. LangChain substitutes variables without re-parsing what it substituted, so the
+  braces inside survive:
+
+```python
+prompt = ChatPromptTemplate.from_messages([("system", "{system_text}"), ("user", "{input}")])
+chain = prompt | llm | JsonOutputParser()
+chain.invoke({"system_text": fill(load_prompt("exit_advisor"), conversation=text),
+              "input": "Return your JSON verdict for the conversation above."})
+```
+
+### 4.10 Shared helpers — `app/modules/common.py`
+
+`load_prompt`, `fill`, `get_llm`, `get_openai_client`, `render_history`, `parse_json_output`.
+Written once so the patterns above are not copy-pasted into four advisor modules. Import
+from here rather than re-deriving.
+
+### 4.11 Advisors degrade, they do not raise
+
+Every advisor wraps its model call and returns a **conservative default** on failure —
+`should_end=False`, `should_schedule=False`, `info_needed=False` — logging the exception.
+One flaky call must not end a candidate's conversation or break a turn.
+
+The cost of that safety is that a real bug can hide as a quiet degradation. Two were found
+this way during the first evaluation run: a Chroma client race under thread fan-out, and an
+empty-string embedding request on a conversation's opening turn. **When retrieval or an
+advisor looks inert, check the logs before concluding the model is at fault.**
 
 ### 4.6 Vector store — `Course23/Embedding & Retrieval.ipynb`, `Course25`
 
@@ -260,13 +308,35 @@ results = collection.query(
 retrieved = results["documents"][0]
 ```
 
-Two deviations from the course, both deliberate and both required by the spec:
+**Chroma is the vector database, in every code path.** It is a course requirement, not an
+implementation detail to optimise away. Indexing goes through `collection.add`, retrieval
+through `collection.query`.
+
+Two deviations from the course, both deliberate:
 
 - **`PersistentClient`, not `chromadb.Client()`.** The course used the ephemeral client and
   said so explicitly. The spec requires an *offline* embedding step whose index is reused by
-  the app, and Streamlit Cloud needs the index to ship in the repo.
+  the app.
 - Chunking is ours to define (the course never chunked). Keep it simple and documented in
   `app/modules/embedding/`.
+
+**The offline step writes two artifacts** (`indexer.build_index`):
+
+| Artifact | Size | Committed? |
+|---|---|---|
+| `data/chroma/` — the persisted Chroma database | ~60 MB | **No**, gitignored |
+| `data/vector_store.json` — same chunks + vectors as JSON | ~94 KB | **Yes** |
+
+Chroma pre-allocates its HNSW index for 10,000 vectors, so it writes 60 MB for our three
+chunks — too heavy for a repo. `retriever.get_collection()` therefore resolves in two steps:
+use `data/chroma/` when it exists, otherwise **rebuild that Chroma database from the JSON
+seed** and use it. A fresh checkout and Streamlit Cloud both take the second path.
+
+The seed is a transport format, never a query path. Nothing reads vectors out of the JSON.
+
+Resetting the persisted store uses Chroma's `delete_collection`, **not** `shutil.rmtree`: on
+Windows the store keeps file handles open, so `rmtree` raises `PermissionError` and leaves a
+half-removed directory behind.
 
 RAG is hand-wired the way the course taught it: retrieve → stuff the context into the prompt →
 call the LLM. No `RetrievalQA`, no `create_retrieval_chain`.
@@ -349,11 +419,14 @@ final-project/
     ├── Python Developer Job Description.pdf
     ├── db_Tech.sql            Original T-SQL. Reference only — see §6.2.
     ├── tech.db                Generated SQLite DB. Committed.
-    └── chroma/                Persisted Chroma index. Committed.
+    ├── vector_store.json      Chunks + vectors seed. Committed (§4.6).
+    ├── chroma/                Persisted Chroma DB. Generated, gitignored.
+    └── cache/                 Cached eval predictions. Gitignored.
 ```
 
-`data/tech.db` and `data/chroma/` are **generated but committed on purpose** — Streamlit
-Community Cloud has no way to run the offline steps, so the artifacts must ship.
+`data/tech.db` and `data/vector_store.json` are **generated but committed on purpose** —
+Streamlit Community Cloud has no way to run the offline steps, so those artifacts must ship.
+`data/chroma/` is rebuilt from the seed on first use instead (§4.6).
 
 Every package directory carries an `__init__.py` (required by the spec, `Page 4.png`).
 
@@ -469,7 +542,7 @@ slots. Live chats pass today as the anchor, which is why the schedule extends in
 | `FT_BASE_MODEL` | `gpt-4o-mini-2024-07-18` | Fine-tuning base. |
 | `FT_EXIT_ADVISOR_MODEL` | *(empty)* | Fine-tuned model id once the job finishes. Empty ⇒ fallback. |
 | `DB_URL` | `sqlite:///data/tech.db` | SQLAlchemy URL. |
-| `CHROMA_PATH` | `data/chroma` | Persisted index directory. |
+| `CHROMA_PATH` | `data/chroma` | Persisted Chroma DB directory (generated, gitignored). |
 | `CHROMA_COLLECTION` | `python_dev_job` | Collection name. |
 | `MAX_ADVISOR_ROUNDS` | `2` | Cap on advisor consultations per turn. |
 
@@ -536,13 +609,14 @@ malformed LLM response from propagating. `with_structured_output` was not taught
 | **Scheduling** | `{"should_schedule": bool, "slots": [{"date": str, "time": str}], "reason": str}` |
 | **Info** | `{"info_needed": bool, "answer": str, "sources": [str]}` |
 
-The Main Agent consumes all three verdicts and emits:
+`resolve_action()` turns the first two into the action (§4.5). The Main Agent then emits:
 
 ```json
 {"action": "continue|schedule|end", "message": "text sent to the candidate", "reason": "..."}
 ```
 
-Define the Pydantic models once in `app/modules/advisors/schemas.py` and import them.
+The `action` it returns is **overwritten** with the resolved one — the model only writes the
+message. Define the Pydantic models once in `app/modules/advisors/schemas.py` and import them.
 
 ---
 
@@ -635,3 +709,6 @@ Ordered by how likely they are to bite.
 | 10 | **`StrOutputParser` makes the result a `str`** — `.content` on it raises `AttributeError`. |
 | 11 | **Do not let `import app` touch the network** or rebuild an index. Offline work belongs in `scripts/`. |
 | 12 | **Never commit `.env`, `data/*.jsonl`, or `.streamlit/secrets.toml`.** |
+| 13 | **`chromadb.PersistentClient` is not thread-safe to construct.** Concurrent builds race on the Rust bindings and fail with a misleading "tenant default_tenant does not exist". `get_collection()` serialises the first construction behind a lock — go through it, never build a client inline. |
+| 14 | **The embeddings endpoint rejects an empty string** with a 400. A conversation's opening turn has no candidate message, so guard the query before embedding it. |
+| 15 | **Advisors swallow their own errors by design** (§4.11), so a broken dependency looks like a lazy model. Read the logs before tuning a prompt. |
