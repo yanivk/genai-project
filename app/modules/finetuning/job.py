@@ -10,14 +10,19 @@ only caller is ``scripts/run_finetuning.py``, invoked by hand.
 Once the job succeeds, write the model id into ``.env`` as
 ``FT_EXIT_ADVISOR_MODEL``. Until then the Exit Advisor keeps running on the base
 model with few-shot prompting (CLAUDE.md 11.7).
-
-STATUS: scaffolding. Signatures are final; bodies are not implemented yet.
 """
 
 from __future__ import annotations
 
+import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
+
+from app.config import settings
+from app.modules.common import get_openai_client
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -53,7 +58,11 @@ def upload_training_file(jsonl_path: Path) -> str:
     Returns:
         The uploaded file id.
     """
-    raise NotImplementedError
+    path = Path(jsonl_path)
+    with path.open("rb") as handle:
+        uploaded = get_openai_client().files.create(file=handle, purpose="fine-tune")
+    logger.info("Uploaded %s as %s", path.name, uploaded.id)
+    return uploaded.id
 
 
 def create_job(training_file_id: str, suffix: str = "exit-advisor") -> str:
@@ -66,12 +75,28 @@ def create_job(training_file_id: str, suffix: str = "exit-advisor") -> str:
     Returns:
         The job id.
     """
-    raise NotImplementedError
+    job = get_openai_client().fine_tuning.jobs.create(
+        training_file=training_file_id,
+        model=settings.ft_base_model,
+        suffix=suffix,
+    )
+    logger.info("Created fine-tuning job %s on %s", job.id, settings.ft_base_model)
+    return job.id
 
 
 def get_status(job_id: str) -> JobStatus:
     """Fetch the current status of a job."""
-    raise NotImplementedError
+    job = get_openai_client().fine_tuning.jobs.retrieve(job_id)
+    error = getattr(job, "error", None)
+    # The SDK returns an error object whose fields are all None while the job is
+    # healthy, so only surface a message when one is actually set.
+    message = getattr(error, "message", None) if error else None
+    return JobStatus(
+        job_id=job.id,
+        status=job.status,
+        model=job.fine_tuned_model,
+        error=message,
+    )
 
 
 def wait_for_completion(job_id: str, poll_seconds: int = 30) -> JobStatus:
@@ -85,4 +110,10 @@ def wait_for_completion(job_id: str, poll_seconds: int = 30) -> JobStatus:
         The terminal status. On success, ``.model`` holds the id to put into
         ``FT_EXIT_ADVISOR_MODEL``.
     """
-    raise NotImplementedError
+    while True:
+        status = get_status(job_id)
+        if status.is_terminal:
+            return status
+        logger.info("Job %s: %s", job_id, status.status)
+        print(f"  {status.status}...", flush=True)
+        time.sleep(poll_seconds)

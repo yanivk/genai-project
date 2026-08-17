@@ -20,6 +20,11 @@ import pytest
 from sqlalchemy import text as sa_text
 
 from app.config import ROOT_DIR, settings
+from app.modules.advisors.exit_advisor import (
+    DIRECTIVE,
+    PROMPT_FINETUNED,
+    build_system_text,
+)
 from app.modules.advisors.scheduling_advisor import resolve_relative_date
 from app.modules.advisors.schemas import ExitVerdict, SchedulingVerdict
 from app.modules.common import parse_json_output, render_history
@@ -35,6 +40,12 @@ from app.modules.evaluation.dataset import (
     ending_flavour,
     load_conversations,
     split_by_conversation,
+)
+from app.modules.finetuning.dataset import (
+    MIN_EXAMPLES,
+    build_examples,
+    describe,
+    write_jsonl,
 )
 from app.modules.main_agent.actions import (
     ACTIONS,
@@ -401,3 +412,104 @@ class TestHistoryRendering:
 
     def test_empty_history_is_empty_string(self):
         assert render_history([]) == ""
+
+
+class TestFineTuningPrompt:
+    """The condensed prompt the fine-tuned Exit Advisor is trained and served on."""
+
+    def test_exists(self):
+        assert settings.prompt_path(PROMPT_FINETUNED).is_file()
+
+    def test_carries_no_few_shot_examples(self):
+        # Replacing the examples with learned behaviour is the point of
+        # fine-tuning. If they creep back in, every training row pays for them.
+        text = settings.prompt_path(PROMPT_FINETUNED).read_text(encoding="utf-8")
+        assert "# Examples" not in text
+        assert "<conversation id=" not in text
+
+    def test_states_the_same_output_contract(self):
+        text = settings.prompt_path(PROMPT_FINETUNED).read_text(encoding="utf-8")
+        assert '"should_end"' in text and '"reason"' in text
+
+    def test_context_is_last(self):
+        text = settings.prompt_path(PROMPT_FINETUNED).read_text(encoding="utf-8")
+        assert text.index("# Identity") < text.index("# Instructions") < text.index("# Context")
+
+    def test_build_system_text_substitutes_the_conversation(self):
+        rendered = build_system_text("Candidate: Hello.", finetuned=True)
+        assert "Candidate: Hello." in rendered
+        assert "{conversation}" not in rendered
+
+
+class TestFineTuningDataset:
+    """The JSONL that trains the Exit Advisor (CLAUDE.md section 11)."""
+
+    @pytest.fixture(scope="class")
+    def split(self):
+        return split_by_conversation(load_conversations(), test_size=5, seed=42)
+
+    @pytest.fixture(scope="class")
+    def examples(self, split):
+        train_ids, _ = split
+        return build_examples(train_ids)
+
+    def test_held_out_conversations_never_enter_the_jsonl(self, split, examples):
+        """The rule that, broken, silently invalidates the whole evaluation."""
+        train_ids, test_ids = split
+        points = build_decision_points(load_conversations())
+        held_out_texts = {
+            render_history(p.history) for p in points if p.conversation_id in test_ids
+        }
+        trained_texts = {e["messages"][0]["content"] for e in examples}
+        assert not any(
+            held and held in system for held in held_out_texts if held for system in trained_texts
+        )
+        # And the row count matches the training split exactly.
+        assert len(examples) == sum(1 for p in points if p.conversation_id in train_ids)
+
+    def test_row_shape_matches_an_inference_call(self, examples):
+        for example in examples:
+            roles = [m["role"] for m in example["messages"]]
+            assert roles == ["system", "user", "assistant"]
+            assert example["messages"][1]["content"] == DIRECTIVE
+
+    def test_targets_validate_against_the_advisor_contract(self, examples):
+        for example in examples:
+            ExitVerdict.model_validate(json.loads(example["messages"][-1]["content"]))
+
+    def test_should_end_follows_the_label(self, split, examples):
+        train_ids, _ = split
+        points = [
+            p for p in build_decision_points(load_conversations()) if p.conversation_id in train_ids
+        ]
+        for point, example in zip(points, examples, strict=True):
+            target = json.loads(example["messages"][-1]["content"])
+            assert target["should_end"] is (point.label == END)
+
+    def test_both_end_flavours_are_represented(self, examples):
+        """`end` is terminal in both directions — training on one teaches the wrong rule."""
+        reasons = [
+            json.loads(e["messages"][-1]["content"])["reason"]
+            for e in examples
+            if json.loads(e["messages"][-1]["content"])["should_end"]
+        ]
+        assert any("opted out" in r for r in reasons), "no opt-out endings in the training data"
+        assert any("agreed" in r for r in reasons), "no booked endings in the training data"
+
+    def test_enough_rows_for_the_api(self, examples):
+        assert len(examples) >= MIN_EXAMPLES
+
+    def test_describe_flags_a_one_sided_dataset(self, examples):
+        booked_only = [
+            e
+            for e in examples
+            if "opted out" not in json.loads(e["messages"][-1]["content"])["reason"]
+        ]
+        assert "WARNING" in describe(booked_only)
+        assert "WARNING" not in describe(examples)
+
+    def test_write_jsonl_round_trips(self, examples, tmp_path):
+        path = write_jsonl(examples, tmp_path / "train.jsonl")
+        lines = path.read_text(encoding="utf-8").splitlines()
+        assert len(lines) == len(examples)
+        assert [json.loads(line) for line in lines] == examples

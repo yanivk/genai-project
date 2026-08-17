@@ -26,6 +26,7 @@
 - [Getting Started](#getting-started)
 - [Usage](#usage)
 - [Evaluation](#evaluation)
+- [Fine-Tuning](#fine-tuning)
 - [Project Structure](#project-structure)
 - [Deployment](#deployment)
 - [To-Do List](#to-do-list)
@@ -139,17 +140,18 @@ Then fill in `OPENAI_API_KEY`. `.env` is gitignored — never commit it.
 Run these once, in order. They build the artifacts the app reads at runtime.
 
 ```bash
-python scripts/seed_database.py         # -> data/tech.db
-python scripts/build_vector_store.py    # -> data/chroma/ + data/vector_store.json
-python scripts/run_finetuning.py        # optional; prints the fine-tuned model id
+python scripts/seed_database.py             # -> data/tech.db
+python scripts/build_vector_store.py        # -> data/chroma/ + data/vector_store.json
+python scripts/run_finetuning.py --dry-run  # build the training JSONL, spend nothing
+python scripts/run_finetuning.py            # optional; prints the fine-tuned model id
 ```
 
 Both artifacts are already committed, so a fresh clone works without running the first
 two. Re-run them only if you change the source data.
 
-The fine-tuning step costs money and takes a few minutes. Skip it if you like — the Exit
-Advisor falls back to the base model with few-shot prompting until
-`FT_EXIT_ADVISOR_MODEL` is set.
+The fine-tuning step costs money and takes a few minutes; it asks for confirmation before
+launching the job. Skip it if you like — the Exit Advisor falls back to the base model with
+few-shot prompting until `FT_EXIT_ADVISOR_MODEL` is set.
 
 ---
 <br></br>
@@ -259,6 +261,50 @@ both opt-outs and bookings appear on each side.
 ---
 <br></br>
 
+## Fine-Tuning
+
+The Exit Advisor is the one component the brief asks to be **fine-tuned**, on OpenAI's API —
+`gpt-4o-mini-2024-07-18` as the base.
+
+```bash
+python scripts/run_finetuning.py --dry-run   # build and inspect, spend nothing
+python scripts/run_finetuning.py             # upload, launch, poll
+```
+
+A training row is literally an inference call: the same system prompt, the same fixed user
+directive, and the target JSON as the assistant turn. Both halves are produced by calling the
+advisor's own `build_system_text()` and `DIRECTIVE` rather than being re-typed, so training and
+serving cannot drift apart.
+
+Two details worth knowing:
+
+- **The training split only.** The 5 held-out conversations never enter the JSONL — the same
+  split function and seed the evaluation notebook uses. Training on all 15 and then reporting
+  accuracy on 5 of them would look fine and mean nothing. A test asserts it.
+- **The fine-tuned model gets a shorter prompt.** Replacing few-shot examples with learned
+  behaviour is the point of fine-tuning, so `exit_advisor_finetuned.txt` drops the 7 worked
+  examples and keeps the identity, the instructions and the output contract. Which file is used
+  follows `FT_EXIT_ADVISOR_MODEL`.
+
+The dry run reports what the job will learn from before you pay for it:
+
+```
+39 training rows
+  should_end=True : 10  (booked 7, opted out 3)
+  should_end=False: 29
+```
+
+That booked/opted-out breakdown is the line to check. `end` is terminal in **both** directions,
+and a model trained on opt-outs alone learns that ending means rejection — wrong for 11 of the
+15 conversations. `describe()` prints a warning if either flavour is missing.
+
+**The fallback always works.** With `FT_EXIT_ADVISOR_MODEL` empty, the Exit Advisor runs on the
+base model with few-shot prompting — which is how the evaluation results above were produced.
+The app never hard-fails because a job is missing, expired, or still running.
+
+---
+<br></br>
+
 ## Project Structure
 
 ```text
@@ -329,7 +375,7 @@ Two things make that work:
 - [x] Main Agent orchestration
 - [x] Streamlit chat wiring
 - [x] Evaluation notebook results
-- [ ] Exit Advisor fine-tuning _(pipeline written; job not launched — runs on the few-shot fallback)_
+- [x] Exit Advisor fine-tuning pipeline _(job not launched — runs on the few-shot fallback)_
 - [ ] Cloud deployment
 
 ---
