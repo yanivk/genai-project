@@ -54,9 +54,9 @@ def is_slot_available(date: str, time: str, position: str = "Python Dev") -> boo
     """Check whether one specific slot is free.
 
     Used to validate a slot the candidate proposed themselves, before confirming
-    it. Note the seeded table holds no Monday or Saturday slots
-    (CLAUDE.md 6.2), so a plausible-sounding request can legitimately be
-    unavailable.
+    it. Note the seeded table holds no Monday or Saturday slots and nothing
+    outside 09:00-17:00 (CLAUDE.md 6.3), so a plausible-sounding request can
+    legitimately be unavailable.
 
     Args:
         date: ISO date (YYYY-MM-DD).

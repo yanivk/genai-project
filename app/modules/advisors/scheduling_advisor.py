@@ -7,13 +7,12 @@ the **3 nearest available slots**.
 
 Relative expressions in the candidate's message ("next Friday", "Tuesday at 10")
 are resolved against the conversation's ``start_time_utc``, NOT against today.
-The dataset is dated April 2024 and the seeded database only covers 2024, so
-using ``datetime.now()`` puts every lookup outside the seeded range and returns
-nothing (CLAUDE.md 6.2 and pitfall 2).
+Using ``datetime.now()`` for a historical conversation puts every lookup in the
+wrong week and returns the wrong slots (CLAUDE.md 6.3 and pitfall 2).
 
-The database contains no Monday or Saturday slots, while the dataset happens to
-propose Mondays. Only ever propose slots the database actually holds
-(CLAUDE.md pitfall 9).
+The database contains no Monday or Saturday slots and nothing outside
+09:00-17:00. Only ever propose slots the database actually returns; a
+plausible-sounding time can simply not exist (CLAUDE.md pitfall 9).
 
 STATUS: scaffolding. Signatures are final; bodies are not implemented yet.
 """

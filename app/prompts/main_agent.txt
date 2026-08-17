@@ -47,11 +47,11 @@ info: {"info_needed": true, "answer": "We deploy to AWS using Docker and ECS. Wo
 
 <advisors id="example-2">
 exit: {"should_end": false, "reason": "The candidate asked to meet."}
-scheduling: {"should_schedule": true, "slots": [{"date": "2024-05-02", "time": "10:00:00"}, {"date": "2024-05-02", "time": "14:00:00"}, {"date": "2024-05-03", "time": "09:00:00"}], "reason": "The candidate asked to meet."}
+scheduling: {"should_schedule": true, "slots": [{"date": "2026-08-13", "time": "10:00:00"}, {"date": "2026-08-13", "time": "14:00:00"}, {"date": "2026-08-14", "time": "09:00:00"}], "reason": "The candidate asked to meet."}
 info: {"info_needed": false, "answer": "", "sources": []}
 </advisors>
 <assistant_response id="example-2">
-{"action": "schedule", "message": "Great. I have Thursday May 2nd at 10 AM or 2 PM, or Friday the 3rd at 9 AM. Which suits you?", "reason": "The candidate asked to meet, so proposing the nearest available slots."}
+{"action": "schedule", "message": "Great. I have Thursday the 13th at 10 AM or 2 PM, or Friday the 14th at 9 AM. Which suits you?", "reason": "The candidate asked to meet, so proposing the nearest available slots."}
 </assistant_response>
 
 <advisors id="example-3">

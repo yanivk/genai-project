@@ -31,15 +31,15 @@ Agent whether now is the right moment to propose interview times, and which time
 
 # Examples
 
-<conversation id="example-1" conversation_date="2024-04-30">
+<conversation id="example-1" conversation_date="2026-08-11">
 Recruiter: We currently deploy to AWS using Docker and ECS.
 Candidate: Sounds great! I'd be happy to schedule a meeting.
 </conversation>
 <assistant_response id="example-1">
-{"should_schedule": true, "slots": [{"date": "2024-05-02", "time": "09:00:00"}, {"date": "2024-05-02", "time": "11:00:00"}, {"date": "2024-05-03", "time": "10:00:00"}], "reason": "The candidate explicitly asked to meet; proposing the three nearest free slots."}
+{"should_schedule": true, "slots": [{"date": "2026-08-12", "time": "09:00:00"}, {"date": "2026-08-12", "time": "11:00:00"}, {"date": "2026-08-13", "time": "10:00:00"}], "reason": "The candidate explicitly asked to meet; proposing the three nearest free slots."}
 </assistant_response>
 
-<conversation id="example-2" conversation_date="2024-04-10">
+<conversation id="example-2" conversation_date="2026-07-22">
 Recruiter: Could you share a bit about your Python experience?
 Candidate: Four years of Python and two with SQL. What does the current stack look like?
 </conversation>
@@ -47,7 +47,7 @@ Candidate: Four years of Python and two with SQL. What does the current stack lo
 {"should_schedule": false, "slots": [], "reason": "The candidate is still gathering information about the role."}
 </assistant_response>
 
-<conversation id="example-3" conversation_date="2024-04-12">
+<conversation id="example-3" conversation_date="2026-07-24">
 Recruiter: Our engineering manager can interview you Wednesday at 10 AM or Thursday at 2 PM. Which works best?
 Candidate: Tuesday at 10 AM works.
 </conversation>

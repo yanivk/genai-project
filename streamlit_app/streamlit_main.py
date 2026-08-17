@@ -70,8 +70,8 @@ with st.sidebar:
         "Conversation date",
         value=DEFAULT_CONVERSATION_START,
         help=(
-            "Relative dates like 'next Friday' resolve against this, not today. "
-            "The interview schedule only covers 2024."
+            "Relative dates like 'next Friday' resolve against this. Defaults to "
+            "now; change it to replay a conversation from the dataset."
         ),
     )
 

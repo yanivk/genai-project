@@ -7,11 +7,17 @@ Streamlit Community Cloud, which cannot reach a SQL Server instance.
 
 Rules preserved verbatim from the original script:
 
-* full year **2024-01-01 -> 2024-12-31**
 * **Tuesday-Friday and Sunday only** — Saturday and Monday are excluded
 * hourly **09:00-17:00** inclusive, so 9 slots per day
 * 4 positions: ``Python Dev``, ``Sql Dev``, ``Analyst``, ``ML``
 * ``available`` set pseudo-randomly at roughly 50%
+
+The date range is the one thing that does NOT come from the original script. The
+original covered 2024, matching the dataset as it was first supplied; both have
+since been moved to the present so the system can be tested against live dates.
+The range must always cover every conversation in
+``data/sms_conversations.json`` plus a comfortable margin of future slots, or
+relative dates resolve to rows that do not exist.
 
 Schema note: SQLite has no DATE or TIME type. ``date`` is stored as
 ``YYYY-MM-DD`` and ``time`` as ``HH:MM:SS`` — ISO strings, which sort and compare
@@ -38,8 +44,10 @@ CREATE TABLE IF NOT EXISTS Schedule (
 );
 """
 
-START_DATE = date_type(2024, 1, 1)
-END_DATE = date_type(2024, 12, 31)
+#: Wide enough to cover the whole dataset (July-August 2026) and to leave well
+#: over a year of bookable future slots for live testing.
+START_DATE = date_type(2026, 1, 1)
+END_DATE = date_type(2027, 12, 31)
 
 #: Weekday numbers to skip, Monday=0 .. Sunday=6. The original excluded
 #: Saturday and Monday.
