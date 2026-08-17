@@ -687,6 +687,31 @@ against the OpenAI SDK directly.
    picks the file from `settings.is_finetuned`, and the dataset builder forces `finetuned=True`,
    so training and serving cannot drift apart. The output contract is identical in both files —
    that is what makes the swap a drop-in.
+9. **The job cannot actually be launched — OpenAI closed the platform.** Attempting it returns:
+
+   ```
+   403 training_not_available — "OpenAI is winding down the fine-tuning platform and your
+   organization is no longer able to create new fine-tuning training jobs."
+   ```
+
+   Announced 2026-05-07: organizations that had never run a job before that date are blocked
+   immediately; everyone else loses access on 2027-01-06. Inference on already-trained models
+   survives until the base model retires. This organization never ran one, so `create_job()` is
+   unreachable here — the assignment predates the wind-down.
+
+   Consequences for anyone working on this repo:
+
+   - **Do not debug it.** The 403 is not caused by the JSONL, the split, the base model or the
+     key. `create_job()` translates it into `FineTuningUnavailable` precisely so it is not
+     mistaken for a data bug.
+   - Everything up to job creation is real and verified: the split, the JSONL, and the upload
+     (`upload_training_file()` returns a file id). `--dry-run` exercises the whole builder
+     offline.
+   - **The few-shot fallback is now the only path**, which is what rule 7 was written for. It is
+     what the reported evaluation measures, and `end` already scores 1.00/1.00 on the held-out
+     split — so the fine-tuned model was never where the remaining headroom was.
+   - `FT_EXIT_ADVISOR_MODEL` stays empty. Keep both prompt files and the model swap working: if
+     a fine-tuned id ever becomes available, it is a one-line `.env` change.
 
 ---
 
