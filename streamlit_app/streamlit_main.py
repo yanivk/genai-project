@@ -8,8 +8,7 @@ Chat layout follows ``Course24/streamlit_1_app.py``: ``st.session_state.messages
 holds the transcript, ``st.chat_message`` renders it, ``st.chat_input`` collects
 the next candidate message, and ``st.spinner`` covers the model call.
 
-STATUS: scaffolding. The page renders and reports setup status; the chat loop is
-wired but the turn handler is not implemented yet.
+UI only — every decision is made in ``app/`` (CLAUDE.md section 2, rule 4).
 """
 
 from __future__ import annotations
@@ -25,50 +24,27 @@ if str(ROOT) not in sys.path:
 
 import streamlit as st  # noqa: E402
 
-from app.config import settings  # noqa: E402
-from streamlit_app.utils import DEFAULT_CONVERSATION_START, GREETING  # noqa: E402
+from streamlit_app.utils import (  # noqa: E402
+    ACTION_BADGES,
+    DEFAULT_CONVERSATION_START,
+    append_message,
+    health_check,
+    init_session_state,
+    render_history,
+    reset_conversation,
+)
 
 st.set_page_config(page_title="Python Developer — Recruiting Bot", page_icon="💬")
 
-
-def _status_rows() -> list[tuple[str, bool, str]]:
-    """Check that each offline artifact exists, without calling the API."""
-    db_file = settings.db_url.removeprefix("sqlite:///")
-    return [
-        (
-            "OpenAI API key",
-            bool(settings.openai_api_key),
-            "set" if settings.openai_api_key else "missing — copy .env.example to .env",
-        ),
-        (
-            "Schedule database",
-            Path(db_file).exists(),
-            db_file if Path(db_file).exists() else "run: python scripts/seed_database.py",
-        ),
-        (
-            "Chroma index",
-            settings.chroma_path.exists() and any(settings.chroma_path.iterdir()),
-            str(settings.chroma_path)
-            if settings.chroma_path.exists() and any(settings.chroma_path.iterdir())
-            else "run: python scripts/build_vector_store.py",
-        ),
-        (
-            "Exit Advisor model",
-            settings.is_finetuned,
-            settings.ft_exit_advisor_model
-            if settings.is_finetuned
-            else f"not fine-tuned yet — falling back to {settings.openai_model}",
-        ),
-    ]
-
+init_session_state()
 
 # --- Sidebar -------------------------------------------------------------
 with st.sidebar:
     st.header("Settings ⚙️")
 
-    conversation_start = st.text_input(
+    st.session_state.conversation_start = st.text_input(
         "Conversation date",
-        value=DEFAULT_CONVERSATION_START,
+        value=st.session_state.get("conversation_start", DEFAULT_CONVERSATION_START),
         help=(
             "Relative dates like 'next Friday' resolve against this. Defaults to "
             "now; change it to replay a conversation from the dataset."
@@ -76,31 +52,35 @@ with st.sidebar:
     )
 
     if st.button("Reset conversation", use_container_width=True):
-        st.session_state.messages = []
+        reset_conversation()
         st.rerun()
 
     st.divider()
     st.subheader("Setup status")
-    for name, ok, detail in _status_rows():
+    for name, (ok, detail) in health_check().items():
         st.write(f"{'✅' if ok else '⚠️'} **{name}** — {detail}")
+
+    if st.session_state.get("last_verdicts"):
+        st.divider()
+        with st.expander("Last advisor verdicts"):
+            st.json(st.session_state.last_verdicts)
 
 
 # --- Chat ----------------------------------------------------------------
 st.title("Python Developer — Recruiting Bot")
 st.caption("SMS-style screening chat. Ask about the role, or arrange an interview.")
 
-if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "assistant", "content": GREETING}]
+render_history()
 
-if "session_id" not in st.session_state:
-    st.session_state.session_id = "streamlit"
+if st.session_state.get("finished"):
+    st.info("This conversation is closed. Use **Reset conversation** to start again.")
 
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.write(message["content"])
+user_prompt = st.chat_input(
+    "Type your message...", disabled=bool(st.session_state.get("finished"))
+)
 
-if user_prompt := st.chat_input("Type your message..."):
-    st.session_state.messages.append({"role": "user", "content": user_prompt})
+if user_prompt:
+    append_message("user", user_prompt)
     with st.chat_message("user"):
         st.write(user_prompt)
 
@@ -112,14 +92,20 @@ if user_prompt := st.chat_input("Type your message..."):
                 result = handle_turn(
                     session_id=st.session_state.session_id,
                     candidate_message=user_prompt,
-                    conversation_start=conversation_start,
+                    conversation_start=st.session_state.conversation_start,
                 )
-                reply = result.message
-            except NotImplementedError:
-                reply = (
-                    "⚠️ The agent is not implemented yet — this is the project "
-                    "scaffolding. See CLAUDE.md for the architecture."
-                )
-            st.write(reply)
+                st.write(result.message)
+                icon, label = ACTION_BADGES.get(result.action, ("", result.action))
+                st.caption(f"{icon} {label} — {result.reason}")
 
-    st.session_state.messages.append({"role": "assistant", "content": reply})
+                append_message("assistant", result.message, action=result.action)
+                st.session_state.last_verdicts = result.verdicts
+                if result.action == "end":
+                    st.session_state.finished = True
+                    st.rerun()
+            except Exception as exc:  # noqa: BLE001 - surface it in the UI
+                st.error(f"The agent failed on this turn: {exc}")
+                st.caption(
+                    "Check the sidebar status panel — a missing database or "
+                    "vector index is the usual cause."
+                )

@@ -14,18 +14,20 @@ Four things every report must contain (CLAUDE.md section 10):
    accuracy can hide a total failure on it
 4. the misclassified turns, with history, true label and prediction
 
-STATUS: scaffolding. Signatures are final; bodies are not implemented yet.
 """
 
 from __future__ import annotations
 
+import json
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
 
 from app.modules.evaluation.dataset import DecisionPoint
-from app.modules.main_agent.actions import Action
+from app.modules.main_agent.actions import ACTIONS, CONTINUE, Action
 
 
 @dataclass(frozen=True)
@@ -51,6 +53,7 @@ class EvalResult:
 def predict_all(
     points: list[DecisionPoint],
     cache_path: Path | None = None,
+    max_workers: int = 4,
 ) -> list[Action]:
     """Run the system over decision points and collect predicted actions.
 
@@ -63,7 +66,31 @@ def predict_all(
     Returns:
         Predicted actions, aligned index-wise with ``points``.
     """
-    raise NotImplementedError
+    from app.modules.main_agent.orchestrator import predict_action
+
+    cache: dict[str, str] = {}
+    if cache_path and Path(cache_path).is_file():
+        cache = json.loads(Path(cache_path).read_text(encoding="utf-8"))
+
+    def key(point: DecisionPoint) -> str:
+        return f"{point.conversation_id}:{point.turn_id}"
+
+    todo = [p for p in points if key(p) not in cache]
+    if todo:
+        # Each point is an independent multi-call chain; running them serially
+        # makes a full sweep take minutes for no reason.
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            results = list(
+                pool.map(
+                    lambda p: predict_action(p.history, p.conversation_start), todo
+                )
+            )
+        cache.update({key(p): r for p, r in zip(todo, results)})
+        if cache_path:
+            Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(cache_path).write_text(json.dumps(cache, indent=2), encoding="utf-8")
+
+    return [cache[key(p)] for p in points]  # type: ignore[misc]
 
 
 def evaluate(points: list[DecisionPoint], predictions: list[Action]) -> EvalResult:
@@ -72,7 +99,38 @@ def evaluate(points: list[DecisionPoint], predictions: list[Action]) -> EvalResu
     Computes accuracy, the majority baseline, the confusion matrix, the per-class
     report and the error table in one pass.
     """
-    raise NotImplementedError
+    from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
+    truth = [p.label for p in points]
+    labels = list(ACTIONS)
+
+    accuracy = accuracy_score(truth, predictions)
+
+    # Majority baseline: predict the most frequent class in the truth for
+    # everything. Reported alongside accuracy so the number is interpretable.
+    majority = Counter(truth).most_common(1)[0][0] if truth else CONTINUE
+    baseline_accuracy = accuracy_score(truth, [majority] * len(truth))
+
+    matrix = confusion_matrix(truth, predictions, labels=labels)
+    confusion = pd.DataFrame(
+        matrix,
+        index=[f"true: {label}" for label in labels],
+        columns=[f"pred: {label}" for label in labels],
+    )
+
+    report = pd.DataFrame(
+        classification_report(
+            truth, predictions, labels=labels, output_dict=True, zero_division=0
+        )
+    ).transpose()
+
+    return EvalResult(
+        accuracy=float(accuracy),
+        baseline_accuracy=float(baseline_accuracy),
+        confusion=confusion,
+        report=report,
+        errors=error_table(points, predictions),
+    )
 
 
 def plot_confusion(result: EvalResult, title: str = "Confusion matrix"):
@@ -84,7 +142,23 @@ def plot_confusion(result: EvalResult, title: str = "Confusion matrix"):
     Returns:
         The matplotlib Axes, so the notebook can adjust it.
     """
-    raise NotImplementedError
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+
+    axes = sns.heatmap(
+        result.confusion,
+        annot=True,
+        fmt="d",
+        cmap="Blues",
+        cbar=False,
+        xticklabels=list(ACTIONS),
+        yticklabels=list(ACTIONS),
+    )
+    axes.set_xlabel("Predicted")
+    axes.set_ylabel("True")
+    axes.set_title(title)
+    plt.tight_layout()
+    return axes
 
 
 def error_table(points: list[DecisionPoint], predictions: list[Action]) -> pd.DataFrame:
@@ -94,4 +168,30 @@ def error_table(points: list[DecisionPoint], predictions: list[Action]) -> pd.Da
     and the predicted one. This table is worth more than the headline score — it
     is where a systematic ``schedule``/``end`` confusion becomes visible.
     """
-    raise NotImplementedError
+    rows = []
+    for point, predicted in zip(points, predictions):
+        if predicted == point.label:
+            continue
+        last_candidate = next(
+            (t["text"] for t in reversed(point.history) if t["speaker"] == "candidate"),
+            "",
+        )
+        rows.append(
+            {
+                "conversation_id": point.conversation_id,
+                "turn_id": point.turn_id,
+                "last_candidate_message": last_candidate,
+                "true_label": point.label,
+                "predicted_label": predicted,
+            }
+        )
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "conversation_id",
+            "turn_id",
+            "last_candidate_message",
+            "true_label",
+            "predicted_label",
+        ],
+    )

@@ -15,13 +15,24 @@ interview is confirmed, and the candidate opted out. In the dataset, ``end`` is
 the last recruiter turn of every conversation: 11 happy endings and 4 opt-outs.
 Treating ``end`` as a rejection signal gets most of the class wrong
 (CLAUDE.md 6.1).
-
-STATUS: scaffolding. Signatures are final; bodies are not implemented yet.
 """
 
 from __future__ import annotations
 
+import logging
+
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+
+from app.config import settings
 from app.modules.advisors.schemas import ExitVerdict
+from app.modules.common import fill, get_llm, load_prompt
+
+logger = logging.getLogger(__name__)
+
+#: Short directive in the user turn. The conversation itself lives in the system
+#: prompt's `# Context` section, following the Course20 layout.
+_DIRECTIVE = "Return your JSON verdict for the conversation above."
 
 
 def build_exit_chain():
@@ -31,10 +42,16 @@ def build_exit_chain():
     (CLAUDE.md 4.4), with the system prompt loaded from
     ``app/prompts/exit_advisor.txt`` and ``temperature=0``.
 
+    The system text is passed in as a *value*, not as a template, so the literal
+    JSON braces in the few-shot examples are never read as template fields.
+
     Returns:
         A runnable producing the raw :class:`ExitVerdict` dict.
     """
-    raise NotImplementedError
+    prompt = ChatPromptTemplate.from_messages(
+        [("system", "{system_text}"), ("user", "{input}")]
+    )
+    return prompt | get_llm(settings.exit_advisor_model) | JsonOutputParser()
 
 
 def should_end(conversation_text: str) -> ExitVerdict:
@@ -45,6 +62,16 @@ def should_end(conversation_text: str) -> ExitVerdict:
             ``Speaker: message`` line per turn.
 
     Returns:
-        The validated verdict.
+        The validated verdict. On any model or parsing failure this returns a
+        conservative "keep talking" verdict rather than raising — one flaky
+        advisor must not end a candidate's conversation.
     """
-    raise NotImplementedError
+    system_text = fill(load_prompt("exit_advisor"), conversation=conversation_text)
+    try:
+        raw = build_exit_chain().invoke(
+            {"system_text": system_text, "input": _DIRECTIVE}
+        )
+        return ExitVerdict.model_validate(raw)
+    except Exception:  # noqa: BLE001 - degrade instead of killing the turn
+        logger.exception("Exit Advisor failed; defaulting to should_end=False")
+        return ExitVerdict(should_end=False, reason="Exit Advisor unavailable.")

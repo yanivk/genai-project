@@ -8,7 +8,9 @@ manages connections (CLAUDE.md 4.7).
 
 Every query is parameterized. Never f-string candidate input into SQL.
 
-STATUS: scaffolding. Signatures are final; bodies are not implemented yet.
+Dates and times are stored as ISO text (``YYYY-MM-DD`` / ``HH:MM:SS``), which
+compares and orders correctly as strings — so ``date >= :from_date`` is a valid
+chronological filter.
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ from __future__ import annotations
 from functools import lru_cache
 
 import pandas as pd
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, text
 
 from app.config import settings
 
@@ -47,7 +49,15 @@ def get_available_slots(
         A DataFrame with columns ``date``, ``time``, ordered chronologically.
         Empty when nothing is free in the remaining range.
     """
-    raise NotImplementedError
+    return pd.read_sql(
+        text(
+            "SELECT date, time FROM Schedule "
+            "WHERE position = :position AND available = 1 AND date >= :from_date "
+            "ORDER BY date, time LIMIT :limit"
+        ),
+        con=get_engine(),
+        params={"position": position, "from_date": from_date, "limit": limit},
+    )
 
 
 def is_slot_available(date: str, time: str, position: str = "Python Dev") -> bool:
@@ -63,7 +73,15 @@ def is_slot_available(date: str, time: str, position: str = "Python Dev") -> boo
         time: 24h time (HH:MM:SS).
         position: Role name as stored in the Schedule table.
     """
-    raise NotImplementedError
+    with get_engine().connect() as conn:
+        row = conn.execute(
+            text(
+                "SELECT available FROM Schedule "
+                "WHERE position = :position AND date = :date AND time = :time"
+            ),
+            {"position": position, "date": date, "time": time},
+        ).fetchone()
+    return bool(row) and bool(row[0])
 
 
 def book_slot(date: str, time: str, position: str = "Python Dev") -> bool:
@@ -78,4 +96,13 @@ def book_slot(date: str, time: str, position: str = "Python Dev") -> bool:
         True when a row was updated, False when the slot did not exist or was
         already taken.
     """
-    raise NotImplementedError
+    with get_engine().begin() as conn:
+        result = conn.execute(
+            text(
+                "UPDATE Schedule SET available = 0 "
+                "WHERE position = :position AND date = :date AND time = :time "
+                "AND available = 1"
+            ),
+            {"position": position, "date": date, "time": time},
+        )
+    return result.rowcount == 1

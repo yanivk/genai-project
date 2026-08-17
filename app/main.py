@@ -48,6 +48,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+GREETING = (
+    "Hi, thanks for submitting your application for our Python Developer role. "
+    "Could you share a bit about your Python experience?"
+)
+
+
 def run_chat(session_id: str, conversation_start: str | None) -> None:
     """Run the interactive loop until the bot ends the conversation.
 
@@ -55,7 +61,40 @@ def run_chat(session_id: str, conversation_start: str | None) -> None:
     :func:`~app.modules.main_agent.orchestrator.handle_turn`, prints the reply,
     and stops once the decided action is ``end``.
     """
-    raise NotImplementedError
+    from app.modules.main_agent.orchestrator import get_history, handle_turn
+
+    print(f"\nRecruiter: {GREETING}")
+    print("\n(type 'quit' to leave, 'why' to see the last advisor verdicts)\n")
+
+    # Seed the bot's own greeting so the first turn has context.
+    get_history(session_id).add_ai_message(GREETING)
+    last: object = None
+
+    while True:
+        try:
+            message = input("You: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nBye.")
+            return
+
+        if not message:
+            continue
+        if message.lower() in {"quit", "exit"}:
+            print("Bye.")
+            return
+        if message.lower() == "why":
+            from app.modules.main_agent.orchestrator import describe_turn
+
+            print(describe_turn(last) if last else "No turn yet.\n")
+            continue
+
+        last = handle_turn(session_id, message, conversation_start)
+        print(f"\nRecruiter: {last.message}")
+        print(f"   [{last.action}] {last.reason}\n")
+
+        if last.action == "end":
+            print("-- conversation closed --")
+            return
 
 
 def main(argv: list[str] | None = None) -> int:

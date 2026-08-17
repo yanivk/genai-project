@@ -20,6 +20,7 @@ Importing this module must never touch the network. See CLAUDE.md section 7.
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,6 +29,12 @@ from dotenv import load_dotenv
 
 # Repository root: app/config.py -> app/ -> repo root.
 ROOT_DIR: Path = Path(__file__).resolve().parent.parent
+
+# Chroma phones home on startup and logs a stack trace when the call fails, which
+# buries real output. Opt out before chromadb is imported anywhere, and silence the
+# logger too: in chromadb 1.0.x the flag alone does not stop every event.
+os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
+logging.getLogger("chromadb.telemetry").setLevel(logging.CRITICAL)
 
 load_dotenv(ROOT_DIR / ".env")
 
@@ -95,6 +102,9 @@ class Settings:
     conversations_json: Path = ROOT_DIR / "data" / "sms_conversations.json"
     job_description_pdf: Path = ROOT_DIR / "data" / "Python Developer Job Description.pdf"
     source_sql: Path = ROOT_DIR / "data" / "db_Tech.sql"
+    #: The committed output of the offline embedding step: chunks + their vectors.
+    #: Around 20 KB, versus the 60 MB Chroma writes for the same three chunks.
+    vector_store_json: Path = ROOT_DIR / "data" / "vector_store.json"
 
     # --- OpenAI ----------------------------------------------------------
     openai_api_key: str = field(default_factory=lambda: get_setting("OPENAI_API_KEY"))

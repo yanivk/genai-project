@@ -96,7 +96,7 @@ Every turn resolves to exactly one action:
 - [x] LangChain agents, tools and conversation memory
 - [x] Function calling against a SQL schedule database
 - [x] RAG over the job description with a Chroma vector store
-- [x] Fine-tuned Exit Advisor, with a graceful few-shot fallback
+- [x] Fine-tuning pipeline for the Exit Advisor, with a graceful few-shot fallback
 - [x] Streamlit chat UI
 - [x] Evaluation on labeled real conversations (accuracy + confusion matrix)
 - [ ] Deployment to Streamlit Community Cloud
@@ -140,9 +140,12 @@ Run these once, in order. They build the artifacts the app reads at runtime.
 
 ```bash
 python scripts/seed_database.py         # -> data/tech.db
-python scripts/build_vector_store.py    # -> data/chroma/
+python scripts/build_vector_store.py    # -> data/chroma/ + data/vector_store.json
 python scripts/run_finetuning.py        # optional; prints the fine-tuned model id
 ```
+
+Both artifacts are already committed, so a fresh clone works without running the first
+two. Re-run them only if you change the source data.
 
 The fine-tuning step costs money and takes a few minutes. Skip it if you like — the Exit
 Advisor falls back to the base model with few-shot prompting until
@@ -213,16 +216,45 @@ like *"next Tuesday"* — kept its meaning. Proposals falling on Monday were rew
 the recruiter's schedule has no Monday or Saturday availability.
 
 ```bash
-pytest tests/ -v
-jupyter notebook tests/test_evals.ipynb
+pytest tests/ -v                        # 63 offline tests, no API calls
+jupyter notebook tests/test_evals.ipynb # full pipeline, reports the metrics below
 ```
 
-The notebook reports accuracy against the **majority-class baseline (42.4%)**, a confusion
-matrix, per-class precision/recall, and a table of every misclassified turn.
+### Results
+
+| Split | n | Accuracy | Majority baseline | Lift |
+|---|---|---|---|---|
+| train (prompts tuned here) | 39 | **0.872** | 0.436 | +0.436 |
+| test (held out) | 20 | **0.850** | 0.400 | +0.450 |
+
+Per-class, on the held-out split:
+
+| Label | Precision | Recall | F1 | Support |
+|---|---|---|---|---|
+| `continue` | 0.857 | 0.750 | 0.800 | 8 |
+| `schedule` | 0.750 | 0.857 | 0.800 | 7 |
+| `end` | **1.000** | **1.000** | **1.000** | 5 |
+
+Train and test land within three points of each other, so the prompt calibration did not
+overfit the conversations it was tuned on.
+
+`end` — the class that covers both a confirmed booking and an opt-out — scores perfectly.
+Getting there took three changes: teaching the Exit Advisor that a candidate naming *their
+own* time counts as agreement; distinguishing that from a candidate *asking* for a slot,
+which does not; and moving the action choice out of the LLM into a deterministic precedence
+rule (`resolve_action()`), because the model reliably preferred `schedule` over `end`
+whenever both advisors fired.
+
+The residual `continue` ⇄ `schedule` errors are largely **label noise**, not a fixable defect.
+The dataset gives opposite labels to near-identical situations — after *"I have three years'
+experience with Django and Flask"* the recruiter asks another question (`continue`), while
+after *"Yes, 3 years' experience"* they propose a time (`schedule`). No decision rule
+satisfies both; the notebook prints the pair side by side.
 
 Splitting happens at the **conversation** level, never the turn level — turns inside one
 conversation share a history prefix, so a turn-level split would leak the test set into
-training and into the few-shot examples.
+prompt tuning and into the few-shot examples. The split is stratified by ending flavour so
+both opt-outs and bookings appear on each side.
 
 ---
 <br></br>
@@ -262,7 +294,8 @@ genai-project/
     ├── Python Developer Job Description.pdf
     ├── db_Tech.sql            Original T-SQL schema (reference)
     ├── tech.db                Generated SQLite database
-    └── chroma/                Persisted vector index
+    ├── vector_store.json      Chunks + embeddings seed (committed)
+    └── chroma/                Persisted Chroma DB (generated, gitignored)
 ```
 
 ---
@@ -274,9 +307,13 @@ Deployed to **Streamlit Community Cloud**, pointing at `streamlit_app/streamlit_
 
 Two things make that work:
 
-- **`data/tech.db` and `data/chroma/` are committed.** Streamlit Cloud cannot run the
-  offline scripts, so the artifacts have to ship with the repo. That is also why the
-  database is SQLite rather than SQL Server.
+- **`data/tech.db` and `data/vector_store.json` are committed.** Streamlit Cloud cannot run
+  the offline scripts, so those artifacts ship with the repo. That is also why the database
+  is SQLite rather than SQL Server.
+- **The Chroma database is rebuilt on first use.** Chroma pre-allocates its HNSW index for
+  10,000 vectors and writes ~60 MB for our three chunks, so `data/chroma/` is gitignored and
+  regenerated from the 94 KB JSON seed. Chroma is still what stores and answers every
+  query — only the way it gets populated changes.
 - **Secrets come from the Streamlit Secrets UI.** `app/config.py` reads `st.secrets` first
   and falls back to environment variables, so the same code runs in both places.
 
@@ -286,13 +323,13 @@ Two things make that work:
 ## To-Do List
 
 - [x] Project scaffolding, conventions and configuration
-- [ ] SQLite seeder and schedule queries
-- [ ] Offline embedding pipeline
-- [ ] The three advisors
-- [ ] Main Agent orchestration
-- [ ] Exit Advisor fine-tuning
-- [ ] Streamlit chat wiring
-- [ ] Evaluation notebook results
+- [x] SQLite seeder and schedule queries
+- [x] Offline embedding pipeline (PDF → Chroma)
+- [x] The three advisors
+- [x] Main Agent orchestration
+- [x] Streamlit chat wiring
+- [x] Evaluation notebook results
+- [ ] Exit Advisor fine-tuning _(pipeline written; job not launched — runs on the few-shot fallback)_
 - [ ] Cloud deployment
 
 ---

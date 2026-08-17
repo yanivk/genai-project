@@ -41,3 +41,9 @@ pydantic==2.11.7
 
 # --- Tests ---------------------------------------------------------------
 pytest==8.3.5
+
+# --- Notebook ------------------------------------------------------------
+# tests/test_evals.ipynb is a required deliverable, so the kernel that runs it
+# is a real dependency, not an optional dev extra.
+jupyter==1.1.1
+ipykernel==6.30.1
