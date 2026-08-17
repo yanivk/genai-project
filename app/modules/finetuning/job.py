@@ -10,6 +10,19 @@ only caller is ``scripts/run_finetuning.py``, invoked by hand.
 Once the job succeeds, write the model id into ``.env`` as
 ``FT_EXIT_ADVISOR_MODEL``. Until then the Exit Advisor keeps running on the base
 model with few-shot prompting (CLAUDE.md 11.7).
+
+**OpenAI closed self-serve fine-tuning on 2026-05-07.** Organizations that had
+never run a job before that date can no longer create one: the API answers 403
+``training_not_available``. Every remaining organization loses the ability by
+2027-01-06. Inference on already-trained models keeps working until the base
+model is retired.
+
+This project's organization is on the wrong side of that date, so
+:func:`create_job` is unreachable in practice. The code stays — it is the
+requested deliverable and it is exercised as far as the API allows (the upload in
+:func:`upload_training_file` succeeds) — and the failure is translated into
+:class:`FineTuningUnavailable` so the script explains itself instead of printing a
+stack trace. See CLAUDE.md 11.9.
 """
 
 from __future__ import annotations
@@ -19,10 +32,23 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from openai import PermissionDeniedError
+
 from app.config import settings
 from app.modules.common import get_openai_client
 
 logger = logging.getLogger(__name__)
+
+#: OpenAI's error code when the organization may not create fine-tuning jobs.
+_PLATFORM_CLOSED_CODE = "training_not_available"
+
+
+class FineTuningUnavailable(RuntimeError):
+    """OpenAI refused to create the job because the platform is closed.
+
+    Distinct from a bad request or a missing key: nothing about the JSONL, the
+    split or the base model would change the outcome.
+    """
 
 
 @dataclass(frozen=True)
@@ -74,14 +100,35 @@ def create_job(training_file_id: str, suffix: str = "exit-advisor") -> str:
 
     Returns:
         The job id.
+
+    Raises:
+        FineTuningUnavailable: When OpenAI refuses because the self-serve
+            fine-tuning platform is closed to this organization. Retrying, or
+            changing the data or the base model, will not help.
     """
-    job = get_openai_client().fine_tuning.jobs.create(
-        training_file=training_file_id,
-        model=settings.ft_base_model,
-        suffix=suffix,
-    )
+    try:
+        job = get_openai_client().fine_tuning.jobs.create(
+            training_file=training_file_id,
+            model=settings.ft_base_model,
+            suffix=suffix,
+        )
+    except PermissionDeniedError as exc:
+        if _is_platform_closed(exc):
+            raise FineTuningUnavailable(str(exc)) from exc
+        raise
     logger.info("Created fine-tuning job %s on %s", job.id, settings.ft_base_model)
     return job.id
+
+
+def _is_platform_closed(exc: PermissionDeniedError) -> bool:
+    """True when a 403 is the platform wind-down rather than a key problem."""
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        error = body.get("error")
+        if isinstance(error, dict) and error.get("code") == _PLATFORM_CLOSED_CODE:
+            return True
+    # The SDK does not always populate `body`; the message is the fallback.
+    return _PLATFORM_CLOSED_CODE in str(exc)
 
 
 def get_status(job_id: str) -> JobStatus:

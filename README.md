@@ -266,9 +266,18 @@ both opt-outs and bookings appear on each side.
 The Exit Advisor is the one component the brief asks to be **fine-tuned**, on OpenAI's API —
 `gpt-4o-mini-2024-07-18` as the base.
 
+> **The job cannot be launched: OpenAI closed self-serve fine-tuning.** Job creation returns
+> `403 training_not_available` — *"OpenAI is winding down the fine-tuning platform and your
+> organization is no longer able to create new fine-tuning training jobs"*
+> ([deprecation notice](https://developers.openai.com/api/docs/deprecations#update-to-openais-self-serve-fine-tuning)).
+> Announced 2026-05-07 for organizations that had never run a job; everyone else loses access
+> on 2027-01-06. The pipeline below is complete and runs end to end up to that call — the
+> split, the JSONL and the upload all succeed. The Exit Advisor therefore ships on its few-shot
+> fallback, which is what that fallback was built for.
+
 ```bash
 python scripts/run_finetuning.py --dry-run   # build and inspect, spend nothing
-python scripts/run_finetuning.py             # upload, launch, poll
+python scripts/run_finetuning.py             # upload, then stop at the 403 above
 ```
 
 A training row is literally an inference call: the same system prompt, the same fixed user
@@ -300,7 +309,9 @@ and a model trained on opt-outs alone learns that ending means rejection — wro
 
 **The fallback always works.** With `FT_EXIT_ADVISOR_MODEL` empty, the Exit Advisor runs on the
 base model with few-shot prompting — which is how the evaluation results above were produced.
-The app never hard-fails because a job is missing, expired, or still running.
+The app never hard-fails because a job is missing, expired, or — as it turns out — impossible
+to create. Worth noting that `end` already scores 1.00 precision and 1.00 recall on the held-out
+split without it, so the fine-tuned model was never where the remaining headroom sat.
 
 ---
 <br></br>
@@ -375,7 +386,7 @@ Two things make that work:
 - [x] Main Agent orchestration
 - [x] Streamlit chat wiring
 - [x] Evaluation notebook results
-- [x] Exit Advisor fine-tuning pipeline _(job not launched — runs on the few-shot fallback)_
+- [x] Exit Advisor fine-tuning pipeline _(job blocked by OpenAI's platform wind-down — runs on the few-shot fallback)_
 - [ ] Cloud deployment
 
 ---

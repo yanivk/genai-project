@@ -30,7 +30,12 @@ if str(ROOT) not in sys.path:
 from app.config import settings  # noqa: E402
 from app.modules.evaluation.dataset import load_conversations, split_by_conversation  # noqa: E402
 from app.modules.finetuning.dataset import build_examples, describe, write_jsonl  # noqa: E402
-from app.modules.finetuning.job import create_job, upload_training_file, wait_for_completion  # noqa: E402
+from app.modules.finetuning.job import (  # noqa: E402
+    FineTuningUnavailable,
+    create_job,
+    upload_training_file,
+    wait_for_completion,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -78,7 +83,20 @@ def main(argv: list[str] | None = None) -> int:
     file_id = upload_training_file(jsonl_path)
     print(f"Uploaded file: {file_id}")
 
-    job_id = create_job(file_id)
+    try:
+        job_id = create_job(file_id)
+    except FineTuningUnavailable as exc:
+        print(
+            "\nOpenAI refused to create the job:\n"
+            f"  {exc}\n\n"
+            "Self-serve fine-tuning closed on 2026-05-07 to organizations that had\n"
+            "never run a job before that date, and closes to everyone on 2027-01-06.\n"
+            "Nothing about the training data, the split or the base model changes this.\n\n"
+            "The Exit Advisor keeps running on the few-shot fallback, which is exactly\n"
+            "what that fallback exists for (CLAUDE.md 11.7). Use --dry-run to rebuild\n"
+            "and inspect the training set without calling the API."
+        )
+        return 2
     print(f"Created job: {job_id} on base {settings.ft_base_model}")
 
     status = wait_for_completion(job_id)

@@ -16,7 +16,9 @@ import json
 import re
 from pathlib import Path
 
+import httpx
 import pytest
+from openai import PermissionDeniedError
 from sqlalchemy import text as sa_text
 
 from app.config import ROOT_DIR, settings
@@ -47,6 +49,7 @@ from app.modules.finetuning.dataset import (
     describe,
     write_jsonl,
 )
+from app.modules.finetuning.job import _is_platform_closed
 from app.modules.main_agent.actions import (
     ACTIONS,
     CONTINUE,
@@ -507,6 +510,26 @@ class TestFineTuningDataset:
         ]
         assert "WARNING" in describe(booked_only)
         assert "WARNING" not in describe(examples)
+
+    def test_platform_closure_is_told_apart_from_a_key_problem(self):
+        """A 403 from the wind-down must not read as a data or credentials bug.
+
+        OpenAI closed self-serve fine-tuning on 2026-05-07, so `create_job` now
+        always fails here. Misreading that as a bad key would send the next
+        person debugging the JSONL for nothing (CLAUDE.md 11.9).
+        """
+
+        def error(code: str) -> PermissionDeniedError:
+            body = {"error": {"message": "denied", "code": code}}
+            response = httpx.Response(
+                403,
+                request=httpx.Request("POST", "https://api.openai.com/v1/fine_tuning/jobs"),
+                json=body,
+            )
+            return PermissionDeniedError("Error code: 403", response=response, body=body)
+
+        assert _is_platform_closed(error("training_not_available"))
+        assert not _is_platform_closed(error("insufficient_permissions"))
 
     def test_write_jsonl_round_trips(self, examples, tmp_path):
         path = write_jsonl(examples, tmp_path / "train.jsonl")
