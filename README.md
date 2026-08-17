@@ -244,18 +244,31 @@ jupyter notebook tests/test_evals.ipynb # full pipeline, reports the metrics bel
 | Split | n | Accuracy | Majority baseline | Lift |
 |---|---|---|---|---|
 | train (prompts tuned here) | 39 | **0.872** | 0.436 | +0.436 |
-| test (held out) | 20 | **0.850** | 0.400 | +0.450 |
+| test (held out) | 20 | **0.800** | 0.400 | +0.400 |
 
 Per-class, on the held-out split:
 
 | Label | Precision | Recall | F1 | Support |
 |---|---|---|---|---|
-| `continue` | 0.857 | 0.750 | 0.800 | 8 |
-| `schedule` | 0.750 | 0.857 | 0.800 | 7 |
+| `continue` | 0.750 | 0.750 | 0.750 | 8 |
+| `schedule` | 0.714 | 0.714 | 0.714 | 7 |
 | `end` | **1.000** | **1.000** | **1.000** | 5 |
+
+Predictions are cached so re-running costs nothing, and the cache stores a fingerprint of
+the four prompts and the model ids. Change a prompt and the cache is discarded rather than
+replayed — otherwise the notebook would report the previous score as if it were the new one.
 
 Train and test land within three points of each other, so the prompt calibration did not
 overfit the conversations it was tuned on.
+
+**The score is deliberately not maximised.** An earlier version reached 0.850 on test by
+proposing an interview after a single answer about the candidate's background — which is
+exactly how the dataset's recruiters behave, and which makes a bad product. Live testing
+showed it booking a slot for someone who had said only *"fullstack developer for 10 years"*,
+a sentence containing no Python at all. The Scheduling Advisor now holds a **screening gate**:
+it will not schedule until the conversation contains a Python-specific answer, matching the
+job description's *"3+ years of experience as a Python Developer"*. That cost exactly one
+test turn out of twenty — inside the noise band below, and worth it.
 
 `end` — the class that covers both a confirmed booking and an opt-out — scores perfectly.
 Getting there took three changes: teaching the Exit Advisor that a candidate naming *their
