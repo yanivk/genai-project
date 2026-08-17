@@ -162,12 +162,12 @@ streamlit run streamlit_app/streamlit_main.py
 ### Terminal
 
 ```bash
-python -m app.main --start 2024-04-03T15:12:00Z
+python -m app.main                                # talk to the bot as of today
+python -m app.main --start 2026-07-15T15:12:00Z   # replay a dataset conversation
 ```
 
-Pass `--start` to pin the conversation date. Relative expressions like *"next Friday"*
-resolve against it, and the schedule database only covers 2024 — without it the bot
-anchors on today and finds no slots.
+`--start` pins the conversation date, which is what relative expressions like *"next
+Friday"* resolve against. The schedule runs to the end of 2027, so today always works.
 
 Check your configuration without calling the API:
 
@@ -183,7 +183,7 @@ from app.modules.main_agent.orchestrator import handle_turn
 result = handle_turn(
     session_id="demo",
     candidate_message="I have three years' experience with Django and Flask.",
-    conversation_start="2024-04-30T11:19:00Z",
+    conversation_start="2026-08-11T11:19:00Z",
 )
 
 print(result.action)   # 'continue'
@@ -206,6 +206,11 @@ recruiter turns are labeled with the action the bot should have taken.
 
 The task: given the history up to and including a candidate turn, predict the label of the
 next recruiter turn.
+
+Conversations span **2026-07-15 → 2026-08-11**. They were shifted from their original 2024
+dates by a whole number of weeks, so every weekday — and therefore every relative reference
+like *"next Tuesday"* — kept its meaning. Proposals falling on Monday were rewritten, since
+the recruiter's schedule has no Monday or Saturday availability.
 
 ```bash
 pytest tests/ -v

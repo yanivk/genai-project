@@ -371,7 +371,7 @@ Every package directory carries an `__init__.py` (required by the spec, `Page 4.
     "conversation_id": 1,
     "candidate_phone": "+1-555-0201",
     "recruiter_phone": "+1-555-0000",
-    "start_time_utc": "2024-04-03T15:12:00Z",
+    "start_time_utc": "2026-07-15T15:12:00Z",
     "turns": [
       { "turn_id": 1, "speaker": "recruiter", "timestamp_utc": "...",
         "text": "...", "label": "continue" },
@@ -421,23 +421,39 @@ same seeding logic:
 
 Seeding rules, preserved from the original:
 
-- Full year **2024-01-01 → 2024-12-31**
 - **Tuesday–Friday and Sunday only** — Saturday and Monday are excluded
 - Hourly **09:00–17:00** inclusive (9 slots/day)
 - 4 positions; `available` set pseudo-randomly at ~50%
+- Range **2026-01-01 → 2027-12-31**
 
 The bot only ever queries `position = 'Python Dev'`.
 
-> **Known dataset/DB mismatch — do not "fix" it.** Several conversations propose **Monday**
-> slots (conversations 1, 3, 10), a day the seeded table never contains. The Scheduling Advisor
-> must propose only slots that exist in the DB. This affects the wording of generated replies,
-> not the evaluated label, so it does not distort the metrics.
+The date range is the one rule that does not come from the original script. It must always
+cover every conversation in the dataset plus a margin of future slots — see §6.3.
 
-### Date resolution
+### 6.3 Dates: the dataset and the schedule move together
 
-Relative expressions ("next Friday", "Tuesday at 10") resolve against the conversation's
-**`start_time_utc`**, not against today's date. Conversations are dated April 2024; using
-`datetime.now()` puts every lookup outside the seeded range and returns nothing.
+Both were originally set in **2024**. They were shifted to the present so the system can be
+tested against live dates, by a **whole number of weeks (119)** — which preserves every
+weekday, and therefore the meaning of every relative expression in the conversation text
+("this Friday", "next Tuesday").
+
+Two invariants follow. Break either one and the Scheduling Advisor silently finds nothing:
+
+1. **The seeded range must cover the dataset**, with future slots left over.
+   Dataset spans **2026-07-15 → 2026-08-11**; the schedule spans **2026-01-01 → 2027-12-31**.
+2. **No message may propose a Monday or a Saturday.** The schedule has no such rows. The
+   dataset originally proposed Mondays in 10 turns; those were rewritten to Tuesday, or to
+   Wednesday where the same message already mentioned Tuesday. Labels were untouched.
+
+Both invariants are enforced by tests in `tests/test_main.py`, so a future re-shift that
+breaks one fails the suite rather than degrading silently. If you do shift again: shift by
+whole weeks, re-seed the database over the new range, and re-run the tests.
+
+**Resolution rule.** Relative expressions ("next Friday", "Tuesday at 10") resolve against
+the conversation's **`start_time_utc`**, not against today's date. Using `datetime.now()`
+for a historical conversation puts every lookup in the wrong week and returns the wrong
+slots. Live chats pass today as the anchor, which is why the schedule extends into 2027.
 
 ---
 
@@ -608,14 +624,14 @@ Ordered by how likely they are to bite.
 | # | Pitfall |
 |---|---|
 | 1 | **`end` is terminal, not negative.** It covers confirmed bookings *and* opt-outs (§6.1). The most common modeling mistake in this project. |
-| 2 | **Relative dates resolve against `start_time_utc`**, not `datetime.now()`. The dataset is April 2024; the DB only covers 2024. |
+| 2 | **Relative dates resolve against `start_time_utc`**, not `datetime.now()`. The dataset spans 2026-07-15 → 2026-08-11; the schedule covers 2026-2027 (§6.3). |
 | 3 | **`AgentExecutor.invoke()` returns a dict** — use `response["output"]`, not `.content`. |
 | 4 | **Placeholder order in the agent prompt is mandatory**: `system` → `history` → `agent_scratchpad` → `user`. |
 | 5 | **`@tool` requires a docstring**, or you get `ValueError: Function must have a docstring if description not provided.` |
 | 6 | **Index and query must use the same embedding model.** Mixing `-small` and `-large` yields silently meaningless distances. |
 | 7 | **Chroma returns cosine *distance* (0–2), not similarity.** Lower is better. `distance = 1 - cosine_similarity`. |
 | 8 | **LangChain 0.3 vs 1.x drift.** `from langchain.memory import ChatMessageHistory` and `langchain.output_parsers` are broken in 1.x — see §3. |
-| 9 | **The DB has no Monday or Saturday slots.** The dataset proposes Mondays anyway (§6.2). Propose only what the DB actually has. |
+| 9 | **The DB has no Monday or Saturday slots**, and none exist outside 09:00–17:00. Propose only what the DB actually returns; never invent a plausible-sounding time (§6.3). |
 | 10 | **`StrOutputParser` makes the result a `str`** — `.content` on it raises `AttributeError`. |
 | 11 | **Do not let `import app` touch the network** or rebuild an index. Offline work belongs in `scripts/`. |
 | 12 | **Never commit `.env`, `data/*.jsonl`, or `.streamlit/secrets.toml`.** |

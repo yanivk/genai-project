@@ -9,11 +9,14 @@ As modules get implemented, add tests next to the relevant class below.
 
 from __future__ import annotations
 
+import datetime as dt
 import json
+import re
 
 import pytest
 
 from app.config import ROOT_DIR, settings
+from app.modules.database.seeder import END_DATE, START_DATE
 from app.modules.main_agent.actions import (
     ACTIONS,
     CONTINUE,
@@ -131,8 +134,39 @@ class TestDataset:
             assert labeled[-1]["label"] == END
             assert all(t["label"] != END for t in labeled[:-1])
 
-    def test_conversations_fall_inside_the_seeded_year(self, conversations):
-        # Relative dates anchor on start_time_utc, and the schedule only covers
-        # 2024. A conversation outside that range would find no slots.
+    def test_conversations_fall_inside_the_seeded_range(self, conversations):
+        # Invariant 1 of CLAUDE.md 6.3: relative dates anchor on start_time_utc
+        # and are looked up in the Schedule table, so a conversation outside the
+        # seeded range would silently find no slots.
         for conversation in conversations:
-            assert conversation["start_time_utc"].startswith("2024-")
+            start = dt.datetime.fromisoformat(
+                conversation["start_time_utc"].replace("Z", "+00:00")
+            ).date()
+            assert START_DATE <= start <= END_DATE, (
+                f"conversation {conversation['conversation_id']} starts {start}, "
+                f"outside the seeded range {START_DATE}..{END_DATE}"
+            )
+
+    def test_no_message_proposes_an_unavailable_weekday(self, conversations):
+        # Invariant 2 of CLAUDE.md 6.3: the schedule has no Monday or Saturday
+        # rows, so no message may propose one.
+        excluded = {"Monday", "Saturday"}
+        offenders = [
+            (c["conversation_id"], t["turn_id"], day)
+            for c in conversations
+            for t in c["turns"]
+            for day in re.findall(r"\b(\w+day)\b", t["text"])
+            if day in excluded
+        ]
+        assert not offenders, f"unavailable weekdays proposed: {offenders}"
+
+    def test_timestamps_are_ordered_and_anchored(self, conversations):
+        for conversation in conversations:
+            stamps = [
+                dt.datetime.fromisoformat(t["timestamp_utc"].replace("Z", "+00:00"))
+                for t in conversation["turns"]
+            ]
+            assert stamps == sorted(stamps)
+            assert stamps[0].isoformat() == dt.datetime.fromisoformat(
+                conversation["start_time_utc"].replace("Z", "+00:00")
+            ).isoformat()

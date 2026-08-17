@@ -7,10 +7,22 @@ STATUS: scaffolding. Signatures are final; bodies are not implemented yet.
 
 from __future__ import annotations
 
-#: Default conversation date offered in the sidebar. Anchored inside 2024 because
-#: that is the only year the seeded database covers; today's date would find no
-#: slots at all (CLAUDE.md 6.2).
-DEFAULT_CONVERSATION_START = "2024-04-03T15:12:00Z"
+from datetime import datetime, timezone
+
+
+def default_conversation_start() -> str:
+    """Return now as the conversation anchor, in the dataset's timestamp format.
+
+    Relative dates resolve against this. Defaulting to now is what you want for a
+    live chat; override it in the sidebar to replay a dataset conversation. The
+    seeded schedule runs to the end of 2027, so today always lands inside it
+    (CLAUDE.md 6.3).
+    """
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+#: Anchor offered in the sidebar on first render.
+DEFAULT_CONVERSATION_START = default_conversation_start()
 
 #: Opening message, matching the phrasing used throughout the labeled dataset.
 GREETING = (

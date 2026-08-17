@@ -3,11 +3,11 @@
 The lightweight way to exercise the agents without starting Streamlit::
 
     python -m app.main
-    python -m app.main --start 2024-04-03T15:12:00Z   # pin the conversation date
+    python -m app.main --start 2026-07-15T15:12:00Z   # replay a dataset conversation
 
-Pinning the date matters: relative expressions like "next Friday" resolve against
-the conversation's start time, and the seeded database only covers 2024. Left to
-default, the bot anchors on today and finds no slots (CLAUDE.md 6.2).
+``--start`` pins the conversation date, which is what relative expressions like
+"next Friday" resolve against. Leave it off to talk to the bot as of today; pass
+it to reproduce a conversation from the dataset (CLAUDE.md 6.3).
 
 STATUS: scaffolding. The argument parsing and the loop shape are final; the turn
 handling is not implemented yet.
@@ -36,9 +36,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         metavar="ISO8601",
         help=(
-            "Conversation start time, e.g. 2024-04-03T15:12:00Z. Relative dates "
-            "resolve against this. Defaults to now, which will find no slots "
-            "because the database only covers 2024."
+            "Conversation start time, e.g. 2026-07-15T15:12:00Z. Relative dates "
+            "resolve against this. Defaults to now."
         ),
     )
     parser.add_argument(
