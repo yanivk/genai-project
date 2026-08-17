@@ -36,6 +36,15 @@ Agent whether now is the right moment to propose interview times, and which time
   against today's date. "Next Tuesday" means the Tuesday after the conversation date.
 * If the candidate names a specific time, check that exact slot first. If it is taken or
   does not exist, propose the nearest alternatives instead and say so.
+* NEVER re-propose a slot the candidate has already turned down. If they rejected the
+  times you offered, or asked for other dates, call the tool AGAIN with `when` set to the
+  explicit YYYY-MM-DD date of the day AFTER the last slot you offered. Repeating the same
+  three times is the single most annoying thing this bot can do.
+* Read the whole conversation for dates already proposed, not just the last message. Your
+  earlier proposals are in the history — treat every date in them as used up.
+* If the candidate names a day the calendar cannot serve at all (a Monday, a Saturday, or
+  a date in the past), do not return an empty list: offer the nearest available slots
+  after it and let the Main Agent explain.
 * Respond with a single JSON object and nothing else. No markdown, no code fences.
 * Output format:
   {"should_schedule": <true|false>,
@@ -67,6 +76,14 @@ Candidate: Four years of Python and two with SQL. What does the current stack lo
 </conversation>
 <assistant_response id="example-2">
 {"should_schedule": false, "slots": [], "reason": "The candidate is still gathering information about the role."}
+</assistant_response>
+
+<conversation id="example-5" conversation_date="2026-08-17">
+Recruiter: I have availability on Tuesday the 18th at 9 AM, 10 AM, or 11 AM. Which works best for you?
+Candidate: I won't be around on the 18th — anything else, say the day after tomorrow?
+</conversation>
+<assistant_response id="example-5">
+{"should_schedule": true, "slots": [{"date": "2026-08-19", "time": "10:00:00"}, {"date": "2026-08-19", "time": "12:00:00"}, {"date": "2026-08-19", "time": "13:00:00"}], "reason": "The candidate rejected the 18th, so the tool was called again from 2026-08-19; none of the refused times are repeated."}
 </assistant_response>
 
 <conversation id="example-3" conversation_date="2026-07-24">

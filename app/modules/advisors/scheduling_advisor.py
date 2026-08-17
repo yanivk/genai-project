@@ -23,6 +23,7 @@ plausible-sounding time can simply not exist (CLAUDE.md pitfall 9).
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timedelta
 
 from langchain.agents import AgentExecutor, create_openai_tools_agent
@@ -37,6 +38,9 @@ logger = logging.getLogger(__name__)
 
 #: The only position this bot recruits for, as stored in the Schedule table.
 POSITION = "Python Dev"
+
+#: An explicit date the advisor computed itself, rather than candidate phrasing.
+_ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 _WEEKDAYS = {
     "monday": 0,
@@ -53,7 +57,10 @@ def resolve_relative_date(expression: str, conversation_start: str) -> str:
     """Resolve a relative date expression against the conversation's date.
 
     Args:
-        expression: Candidate phrasing, e.g. "next Friday", "tomorrow".
+        expression: Candidate phrasing, e.g. "next Friday", "tomorrow". Also
+            accepts an explicit ``YYYY-MM-DD`` date, which is passed straight
+            through — that is how the advisor searches past slots the candidate
+            has already turned down.
             An empty or unrecognised expression resolves to the conversation date
             itself, which makes the caller search forward from "now".
         conversation_start: The conversation's ``start_time_utc``, ISO 8601.
@@ -64,6 +71,16 @@ def resolve_relative_date(expression: str, conversation_start: str) -> str:
     base = datetime.fromisoformat(conversation_start.replace("Z", "+00:00")).date()
     expr = (expression or "").strip().lower()
 
+    # An explicit date wins over any phrase matching. Without this the advisor has
+    # no way to say "start from the 19th" after the candidate rejected the 18th,
+    # and every retry returns the same three slots.
+    if _ISO_DATE.fullmatch(expr):
+        return expr
+
+    # Before "tomorrow": the substring is inside "day after tomorrow", which means
+    # +2, not +1. Ordering these the other way round silently answers the wrong day.
+    if "day after tomorrow" in expr or "overmorrow" in expr:
+        return (base + timedelta(days=2)).isoformat()
     if not expr or "today" in expr or "tonight" in expr:
         return base.isoformat()
     if "tomorrow" in expr:
@@ -100,9 +117,13 @@ def get_available_slots(
     Args:
         conversation_date: The date this conversation is taking place, as
             YYYY-MM-DD. Take it from the Context section of your instructions.
-        when: The candidate's own wording for when they want to meet, e.g.
-            "next Friday", "tomorrow", "Tuesday". Leave empty to search forward
-            from the conversation date.
+        when: Where to start searching. Either the candidate's own wording
+            ("next Friday", "tomorrow", "day after tomorrow", "Tuesday") or an
+            explicit YYYY-MM-DD date. Leave empty to search forward from the
+            conversation date.
+            If the candidate turned down slots you already proposed, pass the
+            explicit date of the day AFTER the last one you offered — otherwise
+            this returns the same slots again.
         limit: How many slots to return. Defaults to 3.
         position: Role name as stored in the schedule. Defaults to "Python Dev".
 

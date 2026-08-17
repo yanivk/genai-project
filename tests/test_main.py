@@ -28,7 +28,7 @@ from app.modules.advisors.exit_advisor import (
     build_system_text,
 )
 from app.modules.advisors.scheduling_advisor import resolve_relative_date
-from app.modules.advisors.schemas import ExitVerdict, SchedulingVerdict
+from app.modules.advisors.schemas import ExitVerdict, InfoVerdict, SchedulingVerdict
 from app.modules.common import parse_json_output, render_history
 from app.modules.database.engine import (
     get_available_slots,
@@ -58,7 +58,7 @@ from app.modules.main_agent.actions import (
     is_valid_action,
     parse_action,
 )
-from app.modules.main_agent.orchestrator import resolve_action
+from app.modules.main_agent.orchestrator import _decision_from, resolve_action
 
 
 class TestActions:
@@ -304,10 +304,21 @@ class TestRelativeDates:
             ("next week", "2026-08-24"),
             ("", "2026-08-17"),
             ("whenever suits you", "2026-08-17"),
+            # "tomorrow" is a substring of this, so the order of the checks
+            # decides the answer. Matched first, it silently returns the 18th.
+            ("day after tomorrow", "2026-08-19"),
+            # An explicit date passes through: this is how the advisor searches
+            # past slots the candidate already refused.
+            ("2026-09-03", "2026-09-03"),
         ],
     )
     def test_resolution(self, expression, expected):
         assert resolve_relative_date(expression, self.ANCHOR) == expected
+
+    def test_explicit_date_beats_a_weekday_name_inside_it(self):
+        # Guards the precedence, not the arithmetic: a date must never be
+        # re-derived from a stray weekday word around it.
+        assert resolve_relative_date("2026-09-03", self.ANCHOR) == "2026-09-03"
 
     def test_same_weekday_means_next_week(self):
         # "Monday" said on a Monday is the coming Monday, not today.
@@ -415,6 +426,40 @@ class TestHistoryRendering:
 
     def test_empty_history_is_empty_string(self):
         assert render_history([]) == ""
+
+
+class TestMainAgentOutputRecovery:
+    """The Main Agent's contract is JSON; off the happy path it writes prose."""
+
+    VERDICT = InfoVerdict(info_needed=False, answer="")
+
+    def test_parses_the_json_contract(self):
+        raw = '{"action": "continue", "message": "Tell me more.", "reason": "probing"}'
+        decision = _decision_from(raw, SCHEDULE, self.VERDICT)
+        assert decision.message == "Tell me more."
+        # The action is resolved in code and always overrides the model's.
+        assert decision.action == SCHEDULE
+
+    def test_plain_prose_is_used_as_the_message(self):
+        """The observed failure: a usable reply was thrown away for a canned one."""
+        raw = "I understand. Unfortunately, the next available slots are all on Tuesday the 18th."
+        decision = _decision_from(raw, SCHEDULE, self.VERDICT)
+        assert decision.message == raw
+        assert decision.action == SCHEDULE
+
+    def test_truncated_json_is_not_shown_to_the_candidate(self):
+        """Half an object is not a message — fall back rather than leak braces."""
+        decision = _decision_from('{"action": "continue", "mess', CONTINUE, self.VERDICT)
+        assert "{" not in decision.message
+
+    def test_empty_output_falls_back_to_the_info_answer(self):
+        verdict = InfoVerdict(info_needed=True, answer="We use Django and Flask.")
+        assert _decision_from("", CONTINUE, verdict).message == "We use Django and Flask."
+
+    def test_nothing_at_all_still_produces_a_message(self):
+        decision = _decision_from("   ", END, self.VERDICT)
+        assert decision.message.strip()
+        assert decision.action == END
 
 
 class TestFineTuningPrompt:

@@ -26,6 +26,7 @@ from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from pydantic import ValidationError
 
 from app.config import settings
 from app.modules.advisors import exit_advisor, info_advisor, scheduling_advisor
@@ -200,6 +201,7 @@ def decide(
         advisors=_format_verdicts(exit_verdict, scheduling_verdict, info_verdict),
     )
 
+    raw = ""
     try:
         raw = build_main_agent().invoke(
             {
@@ -208,19 +210,48 @@ def decide(
                 "input": candidate_message,
             }
         )
-        decision = MainDecision.model_validate(parse_json_output(raw))
-        # The action is ours, not the model's — it only writes the message.
-        decision = decision.model_copy(update={"action": action})
     except Exception:  # noqa: BLE001 - the decision still stands without a message
-        logger.exception("Main Agent failed; using advisor reason as the message")
-        decision = MainDecision(
-            action=action,
-            message=info_verdict.answer
-            or "Thanks for your message — let me get back to you shortly.",
-            reason="Main Agent unavailable; action from advisor precedence.",
-        )
+        logger.exception("Main Agent call failed")
 
-    return decision, verdicts
+    return _decision_from(raw, action, info_verdict), verdicts
+
+
+def _decision_from(raw: str, action: Action, info_verdict: InfoVerdict) -> MainDecision:
+    """Turn the Main Agent's output into a decision, salvaging plain prose.
+
+    The contract asks for JSON, and off the happy path the model sometimes
+    answers the candidate directly instead — *"I understand. Unfortunately, the
+    next available slots are all on Tuesday the 18th..."*. That is a perfectly
+    good message. Treating the missing braces as a failure replaced it with a
+    canned "let me get back to you shortly", which is strictly worse and made a
+    formatting slip look like an outage.
+
+    So the ladder is: parsed JSON, else the prose as-is, else the Info Advisor's
+    answer, else the canned line. The action is always ours (CLAUDE.md 4.5) — the
+    model only ever supplies wording.
+    """
+    text = (raw or "").strip()
+    if text:
+        try:
+            return MainDecision.model_validate(parse_json_output(text)).model_copy(
+                update={"action": action}
+            )
+        except (ValueError, ValidationError):
+            # Prose, not JSON. Usable as-is — but a stray '{' would mean the model
+            # started JSON and was cut off, and half an object is not a message.
+            if "{" not in text:
+                logger.warning("Main Agent returned prose, not JSON; using it as the message")
+                return MainDecision(
+                    action=action, message=text, reason="Model answered in prose."
+                )
+            logger.exception("Main Agent returned unparseable output")
+
+    return MainDecision(
+        action=action,
+        message=info_verdict.answer
+        or "Thanks for your message — let me get back to you shortly.",
+        reason="Main Agent unavailable; action from advisor precedence.",
+    )
 
 
 def handle_turn(
