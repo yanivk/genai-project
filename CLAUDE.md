@@ -86,6 +86,20 @@ spin forever.
 
 Pins come from `../Course24/requirements.txt` — the stack the course actually ran.
 
+**Python 3.13, and it is not a preference.** None of these pins publish wheels for 3.14, so
+pip falls back to building from source: `tiktoken` needs a Rust toolchain, `cffi` needs
+`ffi.h`, and neither exists on a Streamlit Cloud builder. That is exactly how the first
+deploy failed. On Community Cloud the version is chosen under *Advanced settings* at
+creation time and **cannot be changed afterwards** — a wrong choice means deleting the app
+and redeploying.
+
+**Dependencies are split, and the split is load-bearing.** `requirements.txt` holds only
+what the app imports at runtime, because that is the file Streamlit Cloud installs;
+`requirements-dev.txt` adds the notebook, the tests and `PyPDF2` for the offline scripts.
+A test in `tests/test_main.py` imports the whole runtime path with every dev-only package
+blocked, so a stray top-level `import matplotlib` under `app/` fails the suite instead of
+the deploy.
+
 ```
 langchain==0.3.25
 langchain-core==0.3.60
@@ -383,8 +397,10 @@ This lives **only** in `app/config.py`. Everywhere else: `from app.config import
 final-project/
 ├── CLAUDE.md                  This file.
 ├── README.md                  Public project documentation.
-├── LICENSE                    MIT.
-├── requirements.txt           Pinned dependencies (§3).
+├── LICENSE                    Apache-2.0.
+├── .python-version            3.13. The pins have no 3.14 wheels (§3).
+├── requirements.txt           Runtime dependencies only — what Cloud installs (§3).
+├── requirements-dev.txt       The above, plus notebook, tests and offline scripts.
 ├── .env.example               Template for .env — committed, no secrets.
 ├── .gitignore
 ├── Page*.png                  The original assignment brief. Reference only.
@@ -718,10 +734,10 @@ against the OpenAI SDK directly.
 ## 12. Common commands
 
 ```powershell
-# Environment
+# Environment — 3.13, see section 3
 py -3.13 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+pip install -r requirements-dev.txt      # runtime deps + notebook + tests
 
 # Offline steps — run once, in this order
 python scripts/seed_database.py          # data/tech.db
