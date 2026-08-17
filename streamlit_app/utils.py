@@ -104,9 +104,10 @@ def reset_conversation() -> None:
 def health_check() -> dict[str, tuple[bool, str]]:
     """Report whether each offline artifact is present.
 
-    Checks the SQLite database, the Chroma index, the API key and the fine-tuned
-    model id, so a missing setup step shows up in the UI rather than as a stack
-    trace mid-conversation.
+    Checks the SQLite database, the Chroma index and the API key, so a missing
+    setup step shows up in the UI rather than as a stack trace mid-conversation.
+    The Exit Advisor row reports which model backs it, but never fails: running
+    on the few-shot fallback is a valid state, not a missing step.
 
     Returns:
         ``{name: (ok, human readable detail)}``.
@@ -132,8 +133,12 @@ def health_check() -> dict[str, tuple[bool, str]]:
             if seeded
             else "run: python scripts/build_vector_store.py",
         ),
+        # Not a setup step, and not a warning: OpenAI closed self-serve
+        # fine-tuning in May 2026, so few-shot is the only reachable state and
+        # the one the reported evaluation measures. Flagging it orange would
+        # tell the reader something is missing when nothing is.
         "Exit Advisor": (
-            settings.is_finetuned,
+            True,
             "fine-tuned"
             if settings.is_finetuned
             else f"few-shot on {settings.openai_model}",
