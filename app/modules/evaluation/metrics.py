@@ -18,6 +18,7 @@ Four things every report must contain (CLAUDE.md section 10):
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
@@ -26,6 +27,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from app.config import settings
 from app.modules.evaluation.dataset import DecisionPoint
 from app.modules.main_agent.actions import ACTIONS, CONTINUE, Action
 
@@ -50,6 +52,31 @@ class EvalResult:
     errors: pd.DataFrame
 
 
+#: Reserved key inside a cache file; never a decision point.
+_FINGERPRINT_KEY = "__fingerprint__"
+
+#: Everything that changes what the system predicts. A cached run made under a
+#: different value is not comparable to the current one.
+_FINGERPRINTED_PROMPTS = ("main_agent", "exit_advisor", "scheduling_advisor", "info_advisor")
+
+
+def prediction_fingerprint() -> str:
+    """Hash the prompts and models that decide a prediction.
+
+    Predictions are cached so re-running the notebook costs nothing, but the
+    cache key is the decision point alone. Without this, editing a prompt and
+    re-running would silently replay the old predictions and report the previous
+    score as if it were the new one — the kind of mistake that invalidates a
+    result without leaving a trace.
+    """
+    digest = hashlib.sha256()
+    for name in _FINGERPRINTED_PROMPTS:
+        digest.update(settings.prompt_path(name).read_bytes())
+    digest.update(settings.openai_model.encode())
+    digest.update(settings.exit_advisor_model.encode())
+    return digest.hexdigest()[:16]
+
+
 def predict_all(
     points: list[DecisionPoint],
     cache_path: Path | None = None,
@@ -61,16 +88,20 @@ def predict_all(
         points: Decision points to score.
         cache_path: JSON file used to memoize predictions keyed by
             ``(conversation_id, turn_id)``. Re-running the notebook should not
-            re-spend tokens (CLAUDE.md 10.6).
+            re-spend tokens (CLAUDE.md 10.6). The cache is discarded whenever the
+            prompts or the models change — see :func:`prediction_fingerprint`.
 
     Returns:
         Predicted actions, aligned index-wise with ``points``.
     """
     from app.modules.main_agent.orchestrator import predict_action
 
+    fingerprint = prediction_fingerprint()
     cache: dict[str, str] = {}
     if cache_path and Path(cache_path).is_file():
-        cache = json.loads(Path(cache_path).read_text(encoding="utf-8"))
+        stored = json.loads(Path(cache_path).read_text(encoding="utf-8"))
+        if stored.get(_FINGERPRINT_KEY) == fingerprint:
+            cache = {k: v for k, v in stored.items() if k != _FINGERPRINT_KEY}
 
     def key(point: DecisionPoint) -> str:
         return f"{point.conversation_id}:{point.turn_id}"
@@ -88,7 +119,10 @@ def predict_all(
         cache.update({key(p): r for p, r in zip(todo, results)})
         if cache_path:
             Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
-            Path(cache_path).write_text(json.dumps(cache, indent=2), encoding="utf-8")
+            Path(cache_path).write_text(
+                json.dumps({_FINGERPRINT_KEY: fingerprint, **cache}, indent=2),
+                encoding="utf-8",
+            )
 
     return [cache[key(p)] for p in points]  # type: ignore[misc]
 

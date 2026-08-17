@@ -658,6 +658,16 @@ and `Course23/Nlp.ipynb`.
 5. **Report per-class metrics too** (`classification_report`). `end` is the smallest class
    (15 examples); overall accuracy can hide a total failure on it.
 6. **Cache LLM predictions to disk.** Re-running the notebook should not re-spend tokens.
+   The cache is keyed by decision point, so it also stores `prediction_fingerprint()` — a
+   hash of the four prompts and the two model ids. Change a prompt and the cache is
+   discarded instead of replayed. Without it, tuning a prompt and re-running reports the
+   *previous* score as if it were the new one, and nothing in the output says so.
+7. **The metric is not the product.** The dataset's recruiters propose an interview after
+   one answer about the candidate's background, so a bot that does the same scores well —
+   and books the hiring manager's time with someone whose Python experience was never
+   established. The Scheduling Advisor therefore holds a screening gate (§13, pitfall 16)
+   that costs about one test turn. When a prompt change trades accuracy for behaviour,
+   say so next to the number rather than quietly taking the higher score.
 
 ---
 
@@ -777,3 +787,5 @@ Ordered by how likely they are to bite.
 | 13 | **`chromadb.PersistentClient` is not thread-safe to construct.** Concurrent builds race on the Rust bindings and fail with a misleading "tenant default_tenant does not exist". `get_collection()` serialises the first construction behind a lock — go through it, never build a client inline. |
 | 14 | **The embeddings endpoint rejects an empty string** with a 400. A conversation's opening turn has no candidate message, so guard the query before embedding it. |
 | 15 | **Advisors swallow their own errors by design** (§4.11), so a broken dependency looks like a lazy model. Read the logs before tuning a prompt. |
+| 16 | **The Scheduling Advisor holds a screening gate: no interview until a PYTHON-SPECIFIC answer exists.** A job title is not one — *"fullstack developer for 10 years"* says nothing about Python, and the role needs 3+ years of it. Loosening this raises the eval score and produces a bot that books interviews it should not. |
+| 17 | **The eval cache is fingerprinted (§10.6).** If you bypass `predict_all` to save time, you lose that guard and a stale run will report the old score under the new prompts. |
