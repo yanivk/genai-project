@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -41,16 +42,33 @@ from app.modules.main_agent.actions import CONTINUE, END, SCHEDULE, Action
 
 logger = logging.getLogger(__name__)
 
+#: How many conversations to hold at once. :data:`store` is process-global while a
+#: session id is per browser session, so on a long-running server the number of
+#: sessions only ever grows. Evicting the least recently used one past this bound
+#: cannot disturb a live chat: a conversation is dropped only after this many
+#: *other* conversations have had a turn since its own last one.
+MAX_SESSIONS = 64
+
 #: session_id -> conversation history. The course's memory pattern
 #: (Course22/LangChain - Chains & Memory.ipynb). Process-local by design: the
-#: Streamlit layer keys it by its own session id.
-store: dict[str, ChatMessageHistory] = {}
+#: caller — the Streamlit layer or the CLI — supplies the session id.
+#:
+#: The id must be unique per conversation, because this dict is shared by every
+#: caller in the process. A constant id means one viewer's :func:`reset_session`
+#: wipes another viewer's conversation while their transcript still shows it, and
+#: the bot then answers as if nothing had been said.
+store: OrderedDict[str, ChatMessageHistory] = OrderedDict()
 
 
 def get_history(session_id: str) -> ChatMessageHistory:
     """Return the history for a session, creating it on first use."""
-    if session_id not in store:
+    if session_id in store:
+        store.move_to_end(session_id)
+    else:
         store[session_id] = ChatMessageHistory()
+        while len(store) > MAX_SESSIONS:
+            evicted, _ = store.popitem(last=False)
+            logger.info("Evicted conversation memory for session %r", evicted)
     return store[session_id]
 
 

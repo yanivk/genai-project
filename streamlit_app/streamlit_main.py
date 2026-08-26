@@ -8,6 +8,11 @@ Chat layout follows ``Course24/streamlit_1_app.py``: ``st.session_state.messages
 holds the transcript, ``st.chat_message`` renders it, ``st.chat_input`` collects
 the next candidate message, and ``st.spinner`` covers the model call.
 
+The chat area shows the conversation and nothing else: the action behind each
+bot message is kept in the transcript (it is what closes the conversation on
+``end``) but never printed. The sidebar carries the settings, the availability
+calendar, and a collapsed expander with the last advisor verdicts for debugging.
+
 UI only — every decision is made in ``app/`` (CLAUDE.md section 2, rule 4).
 """
 
@@ -24,17 +29,25 @@ if str(ROOT) not in sys.path:
 
 import streamlit as st  # noqa: E402
 
+from streamlit_app.calendar_view import render_calendar  # noqa: E402
 from streamlit_app.utils import (  # noqa: E402
-    ACTION_BADGES,
     DEFAULT_CONVERSATION_START,
     append_message,
-    health_check,
+    apply_sidebar_width,
     init_session_state,
     render_history,
     reset_conversation,
 )
 
-st.set_page_config(page_title="Python Developer — Recruiting Bot", page_icon="💬")
+st.set_page_config(
+    page_title="Python Developer — Recruiting Bot",
+    page_icon="💬",
+    # The sidebar carries the availability calendar, so it is part of the page
+    # rather than an optional panel: open it, and open it wide enough that the
+    # seven weekday columns do not wrap.
+    initial_sidebar_state="expanded",
+)
+apply_sidebar_width()
 
 init_session_state()
 
@@ -56,9 +69,10 @@ with st.sidebar:
         st.rerun()
 
     st.divider()
-    st.subheader("Setup status")
-    for name, (ok, detail) in health_check().items():
-        st.write(f"{'✅' if ok else '⚠️'} **{name}** — {detail}")
+    st.subheader("Availability 📅")
+    # Anchored on the same date the Scheduling Advisor resolves against, so the
+    # grid shows exactly the slots the bot can offer.
+    render_calendar(st.session_state.conversation_start)
 
     if st.session_state.get("last_verdicts"):
         st.divider()
@@ -95,9 +109,6 @@ if user_prompt:
                     conversation_start=st.session_state.conversation_start,
                 )
                 st.write(result.message)
-                icon, label = ACTION_BADGES.get(result.action, ("", result.action))
-                st.caption(f"{icon} {label} — {result.reason}")
-
                 append_message("assistant", result.message, action=result.action)
                 st.session_state.last_verdicts = result.verdicts
                 if result.action == "end":
@@ -106,6 +117,7 @@ if user_prompt:
             except Exception as exc:  # noqa: BLE001 - surface it in the UI
                 st.error(f"The agent failed on this turn: {exc}")
                 st.caption(
-                    "Check the sidebar status panel — a missing database or "
-                    "vector index is the usual cause."
+                    "A missing database or vector index is the usual cause. "
+                    "Run `python scripts/seed_database.py` and "
+                    "`python scripts/build_vector_store.py`, then retry."
                 )

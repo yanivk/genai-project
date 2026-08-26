@@ -5,12 +5,10 @@ Presentation only — nothing here decides anything about the conversation.
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 
 import streamlit as st
-
-from app.config import settings
 
 
 def default_conversation_start() -> str:
@@ -33,23 +31,61 @@ GREETING = (
     "Could you share a bit about your Python experience?"
 )
 
-#: Streamlit session key -> agent memory key. One browser session, one thread.
-SESSION_ID = "streamlit"
-
-#: Badge shown next to each action in the transcript.
-ACTION_BADGES = {
-    "continue": ("💬", "Continuing"),
-    "schedule": ("📅", "Proposing slots"),
-    "end": ("🏁", "Conversation closed"),
-}
+#: Prefix for the agent-memory key. The id itself must be UNIQUE PER BROWSER
+#: SESSION: ``orchestrator.store`` is process-global, so a constant here makes
+#: every tab and every viewer of a deployed app share one conversation — and
+#: ``_seed_agent_memory`` resets it, so a second tab wipes the first one's memory
+#: while its transcript still shows the whole exchange.
+SESSION_PREFIX = "streamlit"
 
 
-def _seed_agent_memory() -> None:
-    """Put the greeting into the agent's memory so turn 1 has context."""
+def new_session_id() -> str:
+    """Return a fresh agent-memory key for one browser session."""
+    return f"{SESSION_PREFIX}-{uuid.uuid4().hex}"
+
+
+#: Sidebar width, in pixels. Streamlit's default is too narrow for the
+#: availability calendar: seven weekday columns wrap and the grid stops being
+#: scannable. The sidebar stays user-resizable — this only sets where it opens.
+SIDEBAR_WIDTH = 350
+
+
+def apply_sidebar_width(width: int = SIDEBAR_WIDTH) -> None:
+    """Widen the sidebar to fit the seven-column calendar grid.
+
+    Streamlit has no page-config option for this, so it goes in as CSS. The rule
+    is marked ``!important`` deliberately: the resize handle writes an inline
+    ``width`` on the same element, and an author ``!important`` declaration is
+    the one thing that outranks a plain inline style.
+
+    Args:
+        width: Sidebar width in pixels.
+    """
+    st.markdown(
+        f"""
+        <style>
+          [data-testid="stSidebar"] {{
+              width: {width}px !important;
+              min-width: {width}px !important;
+          }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _seed_agent_memory(session_id: str) -> None:
+    """Put the greeting into the agent's memory so turn 1 has context.
+
+    Args:
+        session_id: This browser session's key into the agent's memory. Passed in
+            rather than read from a constant — resetting a shared key is exactly
+            how one tab used to erase another's conversation.
+    """
     from app.modules.main_agent.orchestrator import get_history, reset_session
 
-    reset_session(SESSION_ID)
-    get_history(SESSION_ID).add_ai_message(GREETING)
+    reset_session(session_id)
+    get_history(session_id).add_ai_message(GREETING)
 
 
 def init_session_state() -> None:
@@ -57,26 +93,33 @@ def init_session_state() -> None:
 
     Sets up the message list, the session id used to key the agent's memory, and
     the conversation-start anchor.
+
+    The session id is minted first and the memory seeded against it, in that
+    order: seeding is a reset, so it must never run against an id another
+    session could be using.
     """
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = new_session_id()
+
     if "messages" not in st.session_state:
         st.session_state.messages = [{"role": "assistant", "content": GREETING}]
-        _seed_agent_memory()
+        _seed_agent_memory(st.session_state.session_id)
 
-    st.session_state.setdefault("session_id", SESSION_ID)
     st.session_state.setdefault("conversation_start", DEFAULT_CONVERSATION_START)
     st.session_state.setdefault("finished", False)
     st.session_state.setdefault("last_verdicts", None)
 
 
 def render_history() -> None:
-    """Replay ``st.session_state.messages`` into the chat area."""
+    """Replay ``st.session_state.messages`` into the chat area.
+
+    The transcript shows the conversation and nothing else — the action behind
+    each bot message is stored but never rendered, so the chat reads the way an
+    SMS thread would.
+    """
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.write(message["content"])
-            action = message.get("action")
-            if action in ACTION_BADGES:
-                icon, label = ACTION_BADGES[action]
-                st.caption(f"{icon} {label}")
 
 
 def append_message(role: str, content: str, action: str | None = None) -> None:
@@ -85,7 +128,9 @@ def append_message(role: str, content: str, action: str | None = None) -> None:
     Args:
         role: ``"user"`` for the candidate, ``"assistant"`` for the bot.
         content: The message text.
-        action: The action the Main Agent chose, shown as a badge.
+        action: The action the Main Agent chose. Stored as part of the
+            transcript entry for the terminal-state check (``end`` closes the
+            conversation) — deliberately not displayed to the candidate.
     """
     entry: dict[str, str] = {"role": role, "content": content}
     if action:
@@ -95,52 +140,7 @@ def append_message(role: str, content: str, action: str | None = None) -> None:
 
 def reset_conversation() -> None:
     """Clear both the UI transcript and the agent's memory for this session."""
-    _seed_agent_memory()
+    _seed_agent_memory(st.session_state.session_id)
     st.session_state.messages = [{"role": "assistant", "content": GREETING}]
     st.session_state.finished = False
     st.session_state.last_verdicts = None
-
-
-def health_check() -> dict[str, tuple[bool, str]]:
-    """Report whether each offline artifact is present.
-
-    Checks the SQLite database, the Chroma index and the API key, so a missing
-    setup step shows up in the UI rather than as a stack trace mid-conversation.
-    The Exit Advisor row reports which model backs it, but never fails: running
-    on the few-shot fallback is a valid state, not a missing step.
-
-    Returns:
-        ``{name: (ok, human readable detail)}``.
-    """
-    db_file = Path(settings.db_url.removeprefix("sqlite:///"))
-    # Either the persisted Chroma DB or the committed seed it is rebuilt from.
-    persisted = settings.chroma_path.exists() and any(settings.chroma_path.iterdir())
-    seeded = settings.vector_store_json.is_file()
-    return {
-        "OpenAI API key": (
-            bool(settings.openai_api_key),
-            "set" if settings.openai_api_key else "missing — fill in .env",
-        ),
-        "Schedule database": (
-            db_file.exists(),
-            db_file.name if db_file.exists() else "run: python scripts/seed_database.py",
-        ),
-        "Chroma index": (
-            persisted or seeded,
-            f"{settings.chroma_collection} (persisted)"
-            if persisted
-            else f"{settings.chroma_collection} (rebuilt from seed on first use)"
-            if seeded
-            else "run: python scripts/build_vector_store.py",
-        ),
-        # Not a setup step, and not a warning: OpenAI closed self-serve
-        # fine-tuning in May 2026, so few-shot is the only reachable state and
-        # the one the reported evaluation measures. Flagging it orange would
-        # tell the reader something is missing when nothing is.
-        "Exit Advisor": (
-            True,
-            "fine-tuned"
-            if settings.is_finetuned
-            else f"few-shot on {settings.openai_model}",
-        ),
-    }

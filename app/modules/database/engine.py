@@ -15,6 +15,7 @@ chronological filter.
 
 from __future__ import annotations
 
+import datetime as dt
 from functools import lru_cache
 
 import pandas as pd
@@ -57,6 +58,46 @@ def get_available_slots(
         ),
         con=get_engine(),
         params={"position": position, "from_date": from_date, "limit": limit},
+    )
+
+
+def get_availability_calendar(
+    from_date: str,
+    days: int = 28,
+    position: str = "Python Dev",
+) -> pd.DataFrame:
+    """Return every Schedule row in a window, with its availability.
+
+    Unlike :func:`get_available_slots` this keeps the taken slots too, so a
+    calendar view can tell "booked" apart from "never offered". The seeded table
+    holds no Monday or Saturday rows and nothing outside 09:00-17:00
+    (CLAUDE.md 6.3), so a day with zero rows is normal — it is the caller's job
+    to render that as "no slots", never to invent times the DB does not have.
+
+    Args:
+        from_date: ISO date (YYYY-MM-DD) the window starts on (inclusive). A
+            full ISO timestamp (``2026-08-26T17:04:22Z``) is accepted too, so a
+            conversation anchor can be passed straight through.
+        days: Window length in days.
+        position: Role name as stored in the Schedule table.
+
+    Returns:
+        DataFrame with columns ``date`` (str YYYY-MM-DD), ``time`` (str HH:MM:SS),
+        ``available`` (int 0/1), ordered by date then time. Empty when the window
+        falls outside the seeded range.
+    """
+    start = from_date[:10]
+    # The end is exclusive and computed here rather than in SQL: SQLite has no
+    # DATE type, and ISO text dates compare correctly as strings.
+    end = (dt.date.fromisoformat(start) + dt.timedelta(days=days)).isoformat()
+    return pd.read_sql(
+        text(
+            "SELECT date, time, available FROM Schedule "
+            "WHERE position = :position AND date >= :from_date AND date < :to_date "
+            "ORDER BY date, time"
+        ),
+        con=get_engine(),
+        params={"position": position, "from_date": start, "to_date": end},
     )
 
 

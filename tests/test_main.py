@@ -33,6 +33,7 @@ from app.modules.advisors.scheduling_advisor import resolve_relative_date
 from app.modules.advisors.schemas import ExitVerdict, InfoVerdict, SchedulingVerdict
 from app.modules.common import parse_json_output, render_history
 from app.modules.database.engine import (
+    get_availability_calendar,
     get_available_slots,
     get_engine,
     is_slot_available,
@@ -365,6 +366,54 @@ class TestSeededDatabase:
         for _, row in frame.iterrows():
             assert row["date"] >= "2026-08-17"
             assert is_slot_available(row["date"], row["time"])
+
+
+class TestAvailabilityCalendar:
+    """The windowed query behind the sidebar calendar view."""
+
+    FROM_DATE = "2026-08-17"
+    DAYS = 28
+
+    @pytest.fixture(scope="class")
+    def calendar(self):
+        db_file = Path(settings.db_url.removeprefix("sqlite:///"))
+        if not db_file.is_file():
+            pytest.skip("data/tech.db not built; run python scripts/seed_database.py")
+        return get_availability_calendar(self.FROM_DATE, days=self.DAYS)
+
+    def test_window_is_half_open(self, calendar):
+        # Inclusive on the left, exclusive on the right, so consecutive windows
+        # tile the schedule without overlapping.
+        end = (dt.date.fromisoformat(self.FROM_DATE) + dt.timedelta(days=self.DAYS)).isoformat()
+        assert not calendar.empty
+        assert calendar["date"].min() >= self.FROM_DATE
+        assert calendar["date"].max() < end
+
+    def test_columns_and_chronological_order(self, calendar):
+        assert list(calendar.columns) == ["date", "time", "available"]
+        assert set(calendar["available"].unique()) <= {0, 1}
+        pairs = list(zip(calendar["date"], calendar["time"]))
+        assert pairs == sorted(pairs)
+
+    def test_keeps_the_taken_slots_too(self, calendar):
+        # The point of the calendar: a booked slot is a rendered cell, not a
+        # missing row. Only get_available_slots filters on `available`.
+        assert 0 in set(calendar["available"])
+
+    def test_accepts_a_full_iso_timestamp(self, calendar):
+        # Callers pass the conversation anchor (start_time_utc) straight through.
+        stamped = get_availability_calendar(f"{self.FROM_DATE}T17:04:22Z", days=self.DAYS)
+        assert stamped.equals(calendar)
+
+    def test_no_unavailable_weekday_appears(self, calendar):
+        # Invariant 2 of CLAUDE.md 6.3, seen from the query side: a day with no
+        # rows is normal, and the UI must render it as such rather than invent
+        # times the schedule never had.
+        weekdays = {dt.date.fromisoformat(d).weekday() for d in calendar["date"]}
+        assert not weekdays & {0, 5}, "Monday or Saturday slots leaked into the calendar"
+
+    def test_window_outside_the_seeded_range_is_empty(self, calendar):
+        assert get_availability_calendar("2030-01-01", days=self.DAYS).empty
 
 
 class TestJsonRecovery:
