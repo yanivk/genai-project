@@ -39,12 +39,23 @@ class ExitVerdict(BaseModel):
 class SchedulingVerdict(BaseModel):
     """Interview Scheduling Advisor verdict.
 
-    ``slots`` holds the 3 nearest available slots read from the SQL database, and
-    is empty when ``should_schedule`` is False.
+    ``slots`` holds the available slots read from the SQL database for the window
+    the candidate named, and is empty when ``should_schedule`` is False.
+
+    It is also empty in one case where ``should_schedule`` is True:
+    ``needs_availability``. The bot does not hand out dates unprompted — it asks
+    the candidate when they are free, then looks that window up in the schedule.
+    So the first scheduling turn carries no slots at all: there is no date to
+    search on yet. See CLAUDE.md section 4.12.
     """
 
-    should_schedule: bool = Field(description="True when it is the right moment to propose slots.")
-    slots: list[Slot] = Field(default_factory=list, description="Nearest available slots.")
+    should_schedule: bool = Field(description="True when it is the right moment to schedule.")
+    needs_availability: bool = Field(
+        default=False,
+        description="True when the candidate has not said when they are free yet, so the "
+        "turn asks for their availability instead of proposing times.",
+    )
+    slots: list[Slot] = Field(default_factory=list, description="Free slots in the named window.")
     reason: str = Field(description="Short rationale.")
 
 

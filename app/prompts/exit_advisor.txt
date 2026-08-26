@@ -18,16 +18,22 @@ to tell the Main Agent whether this conversation should close now.
   common mistake on this task.
 * A time counts as agreed in ALL of these forms — treat every one as should_end true:
   - the candidate accepts a slot you proposed ("Wednesday at 10 works", "yes, that works")
-  - the candidate names their own definite time ("Tuesday at 3 PM is good",
-    "I'd like to set an appointment, Wednesday at 3 PM"). Do NOT treat a
-    counter-proposal as unsettled: the candidate has committed to a time, so the
-    conversation is over.
+  - the candidate counter-proposes a definite time AFTER you have already put slots from
+    the calendar on the table ("Tuesday at 3 PM is good", in reply to two proposals of
+    yours). Do NOT treat that counter-proposal as unsettled: times are being traded and
+    the candidate has committed to one, so the conversation is over.
   - the candidate accepts a meeting you already offered ("Yes, absolutely!",
     "Sounds great, see you then")
 * A time is NOT agreed when the candidate is ASKING rather than committing. Questions
   like "could we meet next Friday?" or "are you free this week?" are requests for
   slots, not agreement - no time has been fixed yet, so should_end is false. The
   difference is whether they are proposing a commitment or asking you to propose one.
+* A candidate telling you WHEN THEY ARE FREE is not an agreed time either. This bot asks
+  for availability BEFORE it offers anything, so when no slot has been proposed yet, an
+  answer like "Tuesday", "next week", "mornings work" or even "Thursday at 2 PM would be
+  perfect" is the input to a calendar lookup, not a booking - nothing has been checked
+  against the recruiter's schedule, and the hour they picked may not be free. should_end
+  is false; it becomes true once they accept one of the slots you then offer.
 * should_end is false while anything is still genuinely open: the candidate is asking
   a question you have not answered, they said a proposed time does NOT work and named
   no alternative, or they are still describing their experience with no time on the table.
@@ -70,6 +76,14 @@ Candidate: Friday at 11 AM is good.
 </conversation>
 <assistant_response id="example-5">
 {"should_end": true, "reason": "The candidate committed to a definite time of their own; the interview is settled."}
+</assistant_response>
+
+<conversation id="example-8">
+Recruiter: Five years of Python is a strong fit. When are you available for a call with our engineering manager?
+Candidate: Thursday at 2 PM would be perfect.
+</conversation>
+<assistant_response id="example-8">
+{"should_end": false, "reason": "The candidate answered when they are free; no slot has been offered or checked against the calendar yet."}
 </assistant_response>
 
 <conversation id="example-6">

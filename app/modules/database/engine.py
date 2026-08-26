@@ -38,26 +38,58 @@ def get_available_slots(
     from_date: str,
     position: str = "Python Dev",
     limit: int = 3,
+    to_date: str | None = None,
+    time_from: str | None = None,
+    time_to: str | None = None,
 ) -> pd.DataFrame:
     """Return the nearest available slots for a position, on or after a date.
 
+    The optional bounds exist so a query can be confined to the window the
+    *candidate* named. Asked "when are you free?", a candidate answers with a day
+    and often a half of it ("Tuesday afternoon"); an unbounded forward search
+    would answer with Tuesday morning, which is not what they said they could do.
+
     Args:
-        from_date: ISO date (YYYY-MM-DD) to search forward from.
+        from_date: ISO date (YYYY-MM-DD) to search forward from, inclusive.
         position: Role name as stored in the Schedule table.
         limit: Maximum number of slots to return.
+        to_date: Last ISO date to consider, inclusive. ``None`` searches forward
+            with no upper bound. Pass the same value as ``from_date`` to stay
+            inside one single day.
+        time_from: Earliest ``HH:MM:SS`` to consider, inclusive.
+        time_to: Latest ``HH:MM:SS`` to consider, inclusive.
 
     Returns:
         A DataFrame with columns ``date``, ``time``, ordered chronologically.
-        Empty when nothing is free in the remaining range.
+        Empty when nothing is free in the window — which is a normal answer, not
+        an error: the candidate may have named a day the schedule cannot serve.
     """
+    # Clauses are assembled rather than interpolated: every value stays a bound
+    # parameter (CLAUDE.md 4.7), only the fixed SQL fragments are concatenated.
+    clauses = ["position = :position", "available = 1", "date >= :from_date"]
+    params: dict[str, object] = {
+        "position": position,
+        "from_date": from_date,
+        "limit": limit,
+    }
+    if to_date:
+        clauses.append("date <= :to_date")
+        params["to_date"] = to_date
+    if time_from:
+        clauses.append("time >= :time_from")
+        params["time_from"] = time_from
+    if time_to:
+        clauses.append("time <= :time_to")
+        params["time_to"] = time_to
+
     return pd.read_sql(
         text(
             "SELECT date, time FROM Schedule "
-            "WHERE position = :position AND available = 1 AND date >= :from_date "
+            f"WHERE {' AND '.join(clauses)} "
             "ORDER BY date, time LIMIT :limit"
         ),
         con=get_engine(),
-        params={"position": position, "from_date": from_date, "limit": limit},
+        params=params,
     )
 
 

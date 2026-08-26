@@ -29,7 +29,15 @@ from app.modules.advisors.exit_advisor import (
     PROMPT_FINETUNED,
     build_system_text,
 )
-from app.modules.advisors.scheduling_advisor import resolve_relative_date
+from app.modules.advisors.scheduling_advisor import (
+    TIME_OF_DAY,
+    _time_of_day_key,
+    describe_window,
+    reconcile,
+    resolve_relative_date,
+    validate_slots,
+)
+from app.modules.advisors.scheduling_advisor import get_available_slots as slots_tool
 from app.modules.advisors.schemas import ExitVerdict, InfoVerdict, SchedulingVerdict
 from app.modules.common import parse_json_output, render_history
 from app.modules.database.engine import (
@@ -127,6 +135,14 @@ class TestPrompts:
     @pytest.mark.parametrize("name", NAMES)
     def test_exists(self, name):
         assert settings.prompt_path(name).is_file()
+
+    @pytest.mark.parametrize("name", ["scheduling_advisor", "main_agent"])
+    def test_availability_first_is_documented(self, name):
+        # The two prompts that read `needs_availability` must both name it, or one
+        # of them silently reverts to handing out dates the candidate never asked
+        # for — a drift no schema check would catch.
+        text = settings.prompt_path(name).read_text(encoding="utf-8")
+        assert "needs_availability" in text
 
     @pytest.mark.parametrize("name", NAMES)
     def test_section_order(self, name):
@@ -414,6 +430,229 @@ class TestAvailabilityCalendar:
 
     def test_window_outside_the_seeded_range_is_empty(self, calendar):
         assert get_availability_calendar("2030-01-01", days=self.DAYS).empty
+
+
+class TestAvailabilityFirstScheduling:
+    """The candidate names the window; the database names the times.
+
+    The bot never opens with dates of its own: it asks when the candidate is free,
+    then queries the schedule for that window only. These tests cover the two
+    halves of that — the query bounds, and the verdict invariant that keeps a
+    scheduling turn from having nothing to say.
+    """
+
+    #: A Wednesday inside the seeded range. "next Tuesday" from here is 2026-09-01.
+    ANCHOR = "2026-08-26"
+    NEXT_TUESDAY = "2026-09-01"
+
+    @pytest.fixture(scope="class")
+    def db(self):
+        db_file = Path(settings.db_url.removeprefix("sqlite:///"))
+        if not db_file.is_file():
+            pytest.skip("data/tech.db not built; run python scripts/seed_database.py")
+        return get_engine()
+
+    def test_the_tool_takes_the_candidates_window(self):
+        # The model can only pass a window it can see in the signature.
+        assert {"when", "until", "time_of_day"} <= set(slots_tool.args)
+
+    @pytest.mark.parametrize(
+        ("expression", "expected"),
+        [
+            ("morning", "morning"),
+            ("Afternoon", "afternoon"),
+            ("", ""),
+            ("sometime soon", ""),
+            # The longest key wins: "early afternoon" contains both "early" and
+            # "afternoon", and answering with 9-11 AM would contradict the candidate.
+            ("early afternoon", "afternoon"),
+        ],
+    )
+    def test_time_of_day_phrasing(self, expression, expected):
+        assert _time_of_day_key(expression) == expected
+
+    def test_time_of_day_windows_stay_inside_business_hours(self):
+        # The schedule holds nothing outside 09:00-17:00, so an "afternoon" that
+        # ran to 23:59 would only ever widen the query into rows that do not exist.
+        for low, high in TIME_OF_DAY.values():
+            assert "09:00:00" <= low <= high <= "17:00:00"
+
+    def test_engine_confines_a_query_to_one_day(self, db):
+        frame = get_available_slots(
+            self.NEXT_TUESDAY, limit=9, to_date=self.NEXT_TUESDAY
+        )
+        assert not frame.empty
+        assert set(frame["date"]) == {self.NEXT_TUESDAY}
+
+    def test_engine_honours_the_time_bounds(self, db):
+        frame = get_available_slots(
+            self.NEXT_TUESDAY,
+            limit=9,
+            to_date=self.NEXT_TUESDAY,
+            time_from="12:00:00",
+            time_to="17:00:00",
+        )
+        assert all("12:00:00" <= t <= "17:00:00" for t in frame["time"])
+
+    def test_a_single_day_answer_never_leaves_that_day(self, db):
+        # The candidate said Tuesday. Answering with Wednesday morning would be
+        # offering a time they had just told us they could not take.
+        answer = slots_tool.invoke(
+            {
+                "conversation_date": self.ANCHOR,
+                "when": "next Tuesday",
+                "until": "next Tuesday",
+                "limit": 9,
+            }
+        )
+        dates = re.findall(r"\d{4}-\d{2}-\d{2}(?= \d{2}:)", answer)
+        assert dates and set(dates) == {self.NEXT_TUESDAY}
+
+    def test_a_time_of_day_answer_stays_in_that_half_of_the_day(self, db):
+        answer = slots_tool.invoke(
+            {
+                "conversation_date": self.ANCHOR,
+                "when": "next Tuesday",
+                "until": "next Tuesday",
+                "time_of_day": "afternoon",
+                "limit": 9,
+            }
+        )
+        hours = [int(h) for h in re.findall(r"\d{4}-\d{2}-\d{2} (\d{2}):", answer)]
+        assert hours and all(hour >= 12 for hour in hours)
+
+    def test_a_backwards_window_is_read_as_one_day(self, db):
+        # `until` before `when` would return nothing at all, which reads to the
+        # model as "their day is fully booked" rather than as a bad argument.
+        answer = slots_tool.invoke(
+            {
+                "conversation_date": self.ANCHOR,
+                "when": self.NEXT_TUESDAY,
+                "until": "2026-08-01",
+                "limit": 9,
+            }
+        )
+        dates = re.findall(r"\d{4}-\d{2}-\d{2}(?= \d{2}:)", answer)
+        assert dates and set(dates) == {self.NEXT_TUESDAY}
+
+    def test_a_day_the_calendar_cannot_serve_returns_nothing_for_that_day(self, db):
+        # Mondays are never seeded (CLAUDE.md 6.3). The tool must say so rather
+        # than quietly answering with another day the candidate did not ask for;
+        # widening is the advisor's next call, and the message must explain it.
+        answer = slots_tool.invoke(
+            {
+                "conversation_date": self.ANCHOR,
+                "when": "Monday",
+                "until": "Monday",
+                "limit": 9,
+            }
+        )
+        assert answer.startswith("No available")
+
+    @pytest.mark.parametrize(
+        ("from_date", "to_date", "expected"),
+        [
+            ("2026-09-01", "2026-09-01", "on 2026-09-01"),
+            ("2026-09-01", "2026-09-04", "between 2026-09-01 and 2026-09-04"),
+            ("2026-09-01", None, "from 2026-09-01"),
+        ],
+    )
+    def test_window_is_phrased_for_the_model_to_quote(self, from_date, to_date, expected):
+        assert describe_window(from_date, to_date) == expected
+
+    def test_window_phrasing_carries_the_time_of_day(self):
+        assert describe_window("2026-09-01", "2026-09-01", "afternoon").endswith("(afternoon)")
+
+    @pytest.mark.parametrize(
+        ("should_schedule", "needs_availability", "slots"),
+        [
+            # The model said "schedule" but returned nothing: that is an ask.
+            (True, False, []),
+            (True, True, []),
+        ],
+    )
+    def test_a_scheduling_turn_with_no_slots_is_an_ask(
+        self, should_schedule, needs_availability, slots
+    ):
+        # Otherwise the Main Agent gets a schedule turn with nothing to propose,
+        # and the reliable way it fills that gap is by inventing a time.
+        verdict = reconcile(
+            SchedulingVerdict(
+                should_schedule=should_schedule,
+                needs_availability=needs_availability,
+                slots=slots,
+                reason="",
+            )
+        )
+        assert verdict.needs_availability is True
+        assert verdict.slots == []
+
+    def test_real_slots_win_over_a_stale_ask(self):
+        # The window is known, so asking again would ignore what they just said.
+        verdict = reconcile(
+            SchedulingVerdict(
+                should_schedule=True,
+                needs_availability=True,
+                slots=[{"date": "2026-09-01", "time": "12:00:00"}],
+                reason="",
+            )
+        )
+        assert verdict.needs_availability is False
+        assert len(verdict.slots) == 1
+
+    def test_invented_slots_are_replaced_with_real_openings(self, db):
+        # The failure this guards was live: asked for a Monday, the advisor
+        # answered with three plausible Tuesday morning slots, none of them free.
+        # A candidate offered one of those has an interview the calendar cannot
+        # honour, and nothing upstream would have noticed.
+        verdict = validate_slots(
+            SchedulingVerdict(
+                should_schedule=True,
+                slots=[
+                    {"date": self.NEXT_TUESDAY, "time": "09:00:00"},
+                    {"date": self.NEXT_TUESDAY, "time": "10:00:00"},
+                ],
+                reason="Invented.",
+            ),
+            self.ANCHOR,
+        )
+        assert verdict.slots
+        for slot in verdict.slots:
+            assert is_slot_available(slot.date, slot.time)
+        # Substituted slots stay on the day the advisor was aiming at.
+        assert verdict.slots[0].date >= self.NEXT_TUESDAY
+
+    def test_validation_keeps_the_slots_that_are_real(self, db):
+        free = get_available_slots(self.NEXT_TUESDAY, limit=1, to_date=self.NEXT_TUESDAY)
+        real = {"date": free.iloc[0]["date"], "time": free.iloc[0]["time"]}
+        verdict = validate_slots(
+            SchedulingVerdict(
+                should_schedule=True,
+                slots=[real, {"date": self.NEXT_TUESDAY, "time": "09:00:00"}],
+                reason="Half real.",
+            ),
+            self.ANCHOR,
+        )
+        assert [(s.date, s.time) for s in verdict.slots] == [(real["date"], real["time"])]
+
+    def test_validation_leaves_an_availability_ask_alone(self, db):
+        # No slots to check, and no DB query to waste: this turn is a question.
+        verdict = SchedulingVerdict(
+            should_schedule=True, needs_availability=True, slots=[], reason=""
+        )
+        assert validate_slots(verdict, self.ANCHOR) == verdict
+
+    def test_not_scheduling_carries_neither(self):
+        verdict = reconcile(
+            SchedulingVerdict(
+                should_schedule=False,
+                needs_availability=True,
+                slots=[{"date": "2026-09-01", "time": "12:00:00"}],
+                reason="",
+            )
+        )
+        assert verdict.needs_availability is False
+        assert verdict.slots == []
 
 
 class TestJsonRecovery:

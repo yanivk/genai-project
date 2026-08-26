@@ -77,7 +77,7 @@ candidate message
 |---|---|---|
 | **Main Agent** | Runs the turn, owns the conversation memory, picks the action and writes the reply. | — |
 | **Exit Advisor** | Judges whether the conversation should close, so uninterested candidates are not chased. **Fine-tuned** on the labeled dataset. | OpenAI fine-tuned model |
-| **Scheduling Advisor** | Judges whether it is time to schedule; resolves relative dates ("next Friday") and proposes the 3 nearest free slots via function calling. | SQL database |
+| **Scheduling Advisor** | Judges whether it is time to schedule, asks the candidate when they are free, then returns the slots the schedule really holds for *their* window — resolving their relative dates ("next Friday") via function calling. | SQL database |
 | **Info Advisor** | Answers questions about the role from the job description, and steers toward booking. | Chroma vector store |
 
 Every turn resolves to exactly one action:
@@ -85,7 +85,7 @@ Every turn resolves to exactly one action:
 | Action | Meaning |
 |---|---|
 | `continue` | Keep the dialogue going — ask or answer a question. |
-| `schedule` | Propose or renegotiate interview time slots. |
+| `schedule` | Ask when the candidate is free, or offer the slots the database holds for the window they gave. |
 | `end` | The conversation is finished — the interview is confirmed, **or** the candidate opted out. |
 
 ---
@@ -235,47 +235,61 @@ like *"next Tuesday"* — kept its meaning. Proposals falling on Monday were rew
 the recruiter's schedule has no Monday or Saturday availability.
 
 ```bash
-pytest tests/ -v                        # 63 offline tests, no API calls
+pytest tests/ -v                        # 126 offline tests, no API calls
 jupyter notebook tests/test_evals.ipynb # full pipeline, reports the metrics below
 ```
 
 ### Results
 
+Measured with the availability-first scheduling flow in place — the bot asks when the
+candidate is free, then reads the schedule for that window.
+
 | Split | n | Accuracy | Majority baseline | Lift |
 |---|---|---|---|---|
-| train (prompts tuned here) | 39 | **0.872** | 0.436 | +0.436 |
-| test (held out) | 20 | **0.800** | 0.400 | +0.400 |
+| train (prompts tuned here) | 39 | **0.821** | 0.436 | +0.385 |
+| test (held out) | 20 | **0.850** | 0.400 | +0.450 |
 
 Per-class, on the held-out split:
 
 | Label | Precision | Recall | F1 | Support |
 |---|---|---|---|---|
-| `continue` | 0.750 | 0.750 | 0.750 | 8 |
-| `schedule` | 0.714 | 0.714 | 0.714 | 7 |
+| `continue` | 0.727 | 1.000 | 0.842 | 8 |
+| `schedule` | **1.000** | 0.571 | 0.727 | 7 |
 | `end` | **1.000** | **1.000** | **1.000** | 5 |
 
 Predictions are cached so re-running costs nothing, and the cache stores a fingerprint of
 the four prompts and the model ids. Change a prompt and the cache is discarded rather than
 replayed — otherwise the notebook would report the previous score as if it were the new one.
+Asking for availability is still a `schedule` turn, so the taxonomy — and every label — is
+unchanged by that flow.
 
-Train and test land within three points of each other, so the prompt calibration did not
-overfit the conversations it was tuned on.
+Test now sits three points **above** train, which is the small-sample noise band, not a
+sign of anything: 39 and 20 points mean one turn is worth 2.6 and 5.0 points respectively.
+Read the two together, and read the per-class table before either.
 
-**The score is deliberately not maximised.** An earlier version reached 0.850 on test by
-proposing an interview after a single answer about the candidate's background — which is
-exactly how the dataset's recruiters behave, and which makes a bad product. Live testing
-showed it booking a slot for someone who had said only *"fullstack developer for 10 years"*,
-a sentence containing no Python at all. The Scheduling Advisor now holds a **screening gate**:
-it will not schedule until the conversation contains a Python-specific answer, matching the
-job description's *"3+ years of experience as a Python Developer"*. That cost exactly one
-test turn out of twenty — inside the noise band below, and worth it.
+**The score is deliberately not maximised.** An earlier version scored the same 0.850 on
+test by proposing an interview after a single answer about the candidate's background —
+which is exactly how the dataset's recruiters behave, and which makes a bad product. Live
+testing showed it booking a slot for someone who had said only *"fullstack developer for 10
+years"*, a sentence containing no Python at all. The Scheduling Advisor now holds a
+**screening gate**: it will not schedule until the conversation contains a Python-specific
+answer, matching the job description's *"3+ years of experience as a Python Developer"*.
+That cost a test turn when it went in; the availability-first flow won it back, and every
+`schedule` the bot now predicts is correct (precision 1.000) — it under-fires rather than
+booking the hiring manager's time on a maybe.
 
-`end` — the class that covers both a confirmed booking and an opt-out — scores perfectly.
-Getting there took three changes: teaching the Exit Advisor that a candidate naming *their
-own* time counts as agreement; distinguishing that from a candidate *asking* for a slot,
-which does not; and moving the action choice out of the LLM into a deterministic precedence
-rule (`resolve_action()`), because the model reliably preferred `schedule` over `end`
-whenever both advisors fired.
+`end` — the class that covers both a confirmed booking and an opt-out — scores perfectly on
+the held-out split. Getting there took three changes: teaching the Exit Advisor that a
+candidate naming *their own* time counts as agreement **once slots have been offered** —
+while a bare answer to "when are you free?" is a lookup, not a booking; distinguishing both
+from a candidate *asking* for a slot, which does not; and moving the action choice out of the
+LLM into a deterministic precedence rule (`resolve_action()`), because the model reliably
+preferred `schedule` over `end` whenever both advisors fired.
+
+That first qualification has a price, and it is visible in train (`end` recall 0.900): in
+conversation 3 the candidate names a time before anything was offered, and the dataset ends
+the conversation there. The bot instead checks that time against the calendar first. It is
+one turn, it lands on the training side of the split, and it is the behaviour we want.
 
 The residual `continue` ⇄ `schedule` errors are largely **label noise**, not a fixable defect.
 The dataset gives opposite labels to near-identical situations — after *"I have three years'

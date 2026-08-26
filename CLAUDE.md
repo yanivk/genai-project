@@ -29,7 +29,7 @@ Every bot turn resolves to exactly one action:
 |---|---|---|
 | **Main Agent** | Orchestrates the turn. Consults the advisors, then decides `continue` / `schedule` / `end` and writes the message sent to the candidate. Owns the conversation memory. | — |
 | **Exit Advisor** | Decides whether ending now makes sense, so uninterested candidates are not chased. **Fine-tuned** on the labeled dataset. | OpenAI fine-tuned model |
-| **Scheduling Advisor** | Decides whether it is the right moment to schedule; resolves relative dates ("next Friday") against the conversation date; proposes the **3 nearest available slots**. | SQL DB via a LangChain `@tool` |
+| **Scheduling Advisor** | Decides whether it is the right moment to schedule; asks the candidate **when they are free**, resolves their relative dates ("next Friday") against the conversation date, and returns the slots the schedule actually holds for that window (§4.12). | SQL DB via a LangChain `@tool` |
 | **Info Advisor** | Answers questions about the position and keeps the candidate engaged. **Also steers toward the end goal: scheduling an interview.** | Chroma vector DB |
 
 ### One turn (from the spec's workflow diagram, `Page 6.png`)
@@ -288,6 +288,51 @@ The cost of that safety is that a real bug can hide as a quiet degradation. Two 
 this way during the first evaluation run: a Chroma client race under thread fan-out, and an
 empty-string embedding request on a conversation's opening turn. **When retrieval or an
 advisor looks inert, check the logs before concluding the model is at fault.**
+
+### 4.12 Scheduling is availability-first — the candidate names the window
+
+The bot never opens with dates of its own. Once the screening gate is passed it asks *when
+the candidate is free*, and only the turn after does it read the schedule — for the window
+they gave. Two turns, both `schedule`:
+
+| Turn | Verdict | Message |
+|---|---|---|
+| 1 | `should_schedule=true`, `needs_availability=true`, `slots=[]` | *"Take a look at the availability calendar next to this chat and tell me which day suits you."* |
+| 2 | `should_schedule=true`, `needs_availability=false`, `slots=[…]` | *"Tuesday afternoon works — the 1st at 12, 2 or 3 PM."* |
+
+That first message points the candidate at the sidebar calendar in `streamlit_app/`, which
+is drawn from the same `Schedule` table the advisor queries — so what they are asked to pick
+from is what the bot can actually book.
+
+The candidate's own words become the tool's arguments: `when` / `until` (pass the same value
+twice for one single day) and `time_of_day` (`morning`, `midday`, `afternoon`, `evening`,
+carved out of 09:00–17:00 because nothing else is seeded). An empty result is a normal
+answer — the candidate may have named a Monday — and the advisor then widens the window
+rather than inventing something.
+
+Three code-level guards, because none of this can be left to the prompt alone:
+
+- **`reconcile()`** keeps `needs_availability` and `slots` mutually exclusive. A
+  `should_schedule` turn with neither is an *ask*: left alone, the Main Agent has a
+  scheduling turn with nothing to propose, and it fills that gap by inventing a time.
+- **`validate_slots()`** re-reads every proposed slot from the database and drops what is
+  not free, substituting the schedule's real openings from the same day. This is not
+  hypothetical: asked for a Monday, the advisor calls the tool correctly, sees
+  `12:00 / 14:00 / 15:00`, and still reports `09:00 / 10:00 / 11:00`. Tightening the prompt
+  did not stop it. The candidate would be offered three interviews the calendar cannot
+  honour, and every layer above would believe them.
+- The **Exit Advisor** must not read a stated availability as a booking. *"Thursday at 2 PM
+  would be perfect"*, said in answer to *"when are you free?"*, is the input to a lookup —
+  nothing has been checked yet. A counter-proposal made *after* slots were offered still
+  ends the conversation, which is what the dataset means by `end` (§6.1).
+
+That last rule costs one labeled turn: conversation 3, where the candidate names a time
+before anything was offered and the next recruiter turn is `end`. It sits in the **training**
+split, so the held-out score is untouched — but it is a real §10.7 trade-off, not a free one.
+
+**Known limitation.** A counter-proposal after slots were offered is confirmed without a
+database check, because the dataset labels that turn `end` and the Exit Advisor has no tool.
+Fixing it properly costs three held-out `end` turns; it was left alone deliberately.
 
 ### 4.6 Vector store — `Course23/Embedding & Retrieval.ipynb`, `Course25`
 
@@ -624,8 +669,11 @@ malformed LLM response from propagating. `with_structured_output` was not taught
 | Advisor | Returns |
 |---|---|
 | **Exit** | `{"should_end": bool, "reason": str}` |
-| **Scheduling** | `{"should_schedule": bool, "slots": [{"date": str, "time": str}], "reason": str}` |
+| **Scheduling** | `{"should_schedule": bool, "needs_availability": bool, "slots": [{"date": str, "time": str}], "reason": str}` |
 | **Info** | `{"info_needed": bool, "answer": str, "sources": [str]}` |
+
+`needs_availability` is the availability-first flow of §4.12: `should_schedule` with an empty
+`slots` list means *ask them when they are free*, not *propose nothing*.
 
 `resolve_action()` turns the first two into the action (§4.5). The Main Agent then emits:
 
@@ -789,3 +837,5 @@ Ordered by how likely they are to bite.
 | 15 | **Advisors swallow their own errors by design** (§4.11), so a broken dependency looks like a lazy model. Read the logs before tuning a prompt. |
 | 16 | **The Scheduling Advisor holds a screening gate: no interview until a PYTHON-SPECIFIC answer exists.** A job title is not one — *"fullstack developer for 10 years"* says nothing about Python, and the role needs 3+ years of it. Loosening this raises the eval score and produces a bot that books interviews it should not. |
 | 17 | **The eval cache is fingerprinted (§10.6).** If you bypass `predict_all` to save time, you lose that guard and a stale run will report the old score under the new prompts. |
+| 18 | **A `schedule` turn with an empty `slots` list is a question, not a bug** — it is the availability-first flow of §4.12 asking the candidate when they are free. Do not "fix" it by having the Main Agent guess a date. |
+| 19 | **Never trust the advisor's slot list.** It calls the tool correctly and then still reports hours the tool never returned. `validate_slots()` re-reads each one from the database; keep it in the path, and read the `WARNING` it logs before blaming the schedule. |
