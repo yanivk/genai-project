@@ -24,6 +24,10 @@ esac
 
 me=$(git config user.email)
 
+# Strip any assistant attribution. Tools add these automatically; the repository
+# credits the three people who did the work, and nothing else.
+grep -viE '^Co-authored-by: Claude' "$msg_file" > "$msg_file.tmp"   && mv "$msg_file.tmp" "$msg_file"
+
 add_coauthor() {
   name="$1"
   email="$2"

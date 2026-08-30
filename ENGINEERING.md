@@ -825,6 +825,10 @@ Neither account publishes a real address, and this is the form GitHub itself res
 back to a profile. The hook skips the current committer, so nobody is listed as their
 own co-author, and it is idempotent — `git commit --amend` does not stack duplicates.
 
+The hook also strips any `Co-Authored-By: Claude` trailer. Assistant tooling adds one
+automatically, and it surfaces in the repository's contributor list; the credit belongs to
+the three people on the team.
+
 **The hook is opt-in per clone.** Git refuses to run hooks from a checked-in directory
 unless `core.hooksPath` says so, which is a security feature, not an obstacle to route
 around. A missing trailer means someone skipped that config line.
