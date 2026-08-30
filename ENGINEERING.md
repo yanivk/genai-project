@@ -796,6 +796,7 @@ against the OpenAI SDK directly.
 py -3.13 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt      # runtime deps + notebook + tests
+git config core.hooksPath .githooks       # once per clone — see below
 
 # Offline steps — run once, in this order
 python scripts/seed_database.py          # data/tech.db
@@ -811,6 +812,22 @@ streamlit run streamlit_app/streamlit_main.py         # UI
 pytest tests/ -v
 jupyter notebook tests/test_evals.ipynb
 ```
+
+### Commit co-authorship
+
+`git config core.hooksPath .githooks` enables `prepare-commit-msg`, which appends a
+`Co-Authored-By` trailer for each of the other two team members. The work is done by
+three people but pushed from one machine; without the trailers GitHub credits the entire
+history to one account.
+
+The addresses are the GitHub `noreply` form (`<id>+<login>@users.noreply.github.com`).
+Neither account publishes a real address, and this is the form GitHub itself resolves
+back to a profile. The hook skips the current committer, so nobody is listed as their
+own co-author, and it is idempotent — `git commit --amend` does not stack duplicates.
+
+**The hook is opt-in per clone.** Git refuses to run hooks from a checked-in directory
+unless `core.hooksPath` says so, which is a security feature, not an obstacle to route
+around. A missing trailer means someone skipped that config line.
 
 ---
 

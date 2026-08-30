@@ -1,0 +1,39 @@
+#!/bin/sh
+#
+# Add a Co-Authored-By trailer for every member of the team.
+#
+# This is a three-person course project, but in practice the commits are made
+# from one machine. Without these trailers GitHub credits the whole history to a
+# single account and the other two look like they did nothing.
+#
+# Enable it once per clone:
+#
+#     git config core.hooksPath .githooks
+#
+# Emails are the GitHub `noreply` form (`<id>+<login>@users.noreply.github.com`).
+# Neither account publishes a real address, and this form is what GitHub itself
+# uses to link a trailer back to a profile — so the credit resolves correctly.
+
+msg_file="$1"
+source="$2"
+
+# Merge and squash messages are generated; leave them alone.
+case "$source" in
+  merge|squash) exit 0 ;;
+esac
+
+me=$(git config user.email)
+
+add_coauthor() {
+  name="$1"
+  email="$2"
+  # Never list the committer as their own co-author.
+  [ "$email" = "$me" ] && return 0
+  # Idempotent: `git commit --amend` must not stack duplicates.
+  grep -qiF "<$email>" "$msg_file" && return 0
+  git interpret-trailers --in-place \
+    --trailer "Co-Authored-By: $name <$email>" "$msg_file"
+}
+
+add_coauthor "Kashmirwo"    "286095785+Kashmirwo@users.noreply.github.com"
+add_coauthor "mswissa-a11y" "294873320+mswissa-a11y@users.noreply.github.com"
