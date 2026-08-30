@@ -4,7 +4,7 @@ Follows the course DB pattern from ``Course18/OpenAI API - Basics.ipynb``:
 ``create_engine`` + ``pd.read_sql(text(...), con=engine)``. Two deliberate
 differences: the URL comes from ``settings`` rather than hardcoded credentials,
 and we keep the Engine instead of chaining ``.connect()`` onto it, so pandas
-manages connections (CLAUDE.md 4.7).
+manages connections (ENGINEERING.md 4.7).
 
 Every query is parameterized. Never f-string candidate input into SQL.
 
@@ -65,7 +65,7 @@ def get_available_slots(
         an error: the candidate may have named a day the schedule cannot serve.
     """
     # Clauses are assembled rather than interpolated: every value stays a bound
-    # parameter (CLAUDE.md 4.7), only the fixed SQL fragments are concatenated.
+    # parameter (ENGINEERING.md 4.7), only the fixed SQL fragments are concatenated.
     clauses = ["position = :position", "available = 1", "date >= :from_date"]
     params: dict[str, object] = {
         "position": position,
@@ -103,7 +103,7 @@ def get_availability_calendar(
     Unlike :func:`get_available_slots` this keeps the taken slots too, so a
     calendar view can tell "booked" apart from "never offered". The seeded table
     holds no Monday or Saturday rows and nothing outside 09:00-17:00
-    (CLAUDE.md 6.3), so a day with zero rows is normal — it is the caller's job
+    (ENGINEERING.md 6.3), so a day with zero rows is normal — it is the caller's job
     to render that as "no slots", never to invent times the DB does not have.
 
     Args:
@@ -138,7 +138,7 @@ def is_slot_available(date: str, time: str, position: str = "Python Dev") -> boo
 
     Used to validate a slot the candidate proposed themselves, before confirming
     it. Note the seeded table holds no Monday or Saturday slots and nothing
-    outside 09:00-17:00 (CLAUDE.md 6.3), so a plausible-sounding request can
+    outside 09:00-17:00 (ENGINEERING.md 6.3), so a plausible-sounding request can
     legitimately be unavailable.
 
     Args:

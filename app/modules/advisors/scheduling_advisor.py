@@ -18,7 +18,7 @@ offered.
 Relative expressions in the candidate's message ("next Friday", "Tuesday at 10")
 are resolved against the conversation's ``start_time_utc``, NOT against today.
 Using ``datetime.now()`` for a historical conversation puts every lookup in the
-wrong week and returns the wrong slots (CLAUDE.md 6.3 and pitfall 2).
+wrong week and returns the wrong slots (ENGINEERING.md 6.3 and pitfall 2).
 
 The resolution happens **inside the tool**, deterministically, rather than being
 left to the model: LLMs are unreliable at date arithmetic, and a wrong date here
@@ -27,7 +27,7 @@ phrasing and the conversation date; Python does the calendar maths.
 
 The database contains no Monday or Saturday slots and nothing outside
 09:00-17:00. Only ever propose slots the database actually returns; a
-plausible-sounding time can simply not exist (CLAUDE.md pitfall 9).
+plausible-sounding time can simply not exist (ENGINEERING.md pitfall 9).
 """
 
 from __future__ import annotations
@@ -235,7 +235,7 @@ def build_scheduling_agent() -> AgentExecutor:
 
     Uses ``create_openai_tools_agent`` + ``AgentExecutor`` with
     :func:`get_available_slots` bound as its only tool, and the system prompt
-    from ``app/prompts/scheduling_advisor.txt`` (CLAUDE.md 4.1, 4.3).
+    from ``app/prompts/scheduling_advisor.txt`` (ENGINEERING.md 4.1, 4.3).
 
     Placeholder order is mandatory: system -> agent_scratchpad -> user.
     """
@@ -265,7 +265,7 @@ def validate_slots(
     not exist, and the calendar cannot honour it.
 
     So every slot is re-read from the database before the verdict leaves this
-    module (CLAUDE.md pitfall 9). What survives is real. If nothing survives, the
+    module (ENGINEERING.md pitfall 9). What survives is real. If nothing survives, the
     nearest genuine openings from the earliest date the advisor was aiming at are
     substituted, which keeps the candidate's own window as close as the schedule
     allows.

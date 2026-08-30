@@ -8,7 +8,7 @@ holds the reusable logic so the notebook stays readable.
 
 Non-negotiable: **split by conversation_id, never by turn**. Turns inside one
 conversation share a history prefix, so a turn-level split leaks the test set
-into both training and few-shot examples. See CLAUDE.md section 10.
+into both training and few-shot examples. See ENGINEERING.md section 10.
 """
 
 from app.modules.evaluation.dataset import (

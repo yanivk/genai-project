@@ -7,7 +7,7 @@ The lightweight way to exercise the agents without starting Streamlit::
 
 ``--start`` pins the conversation date, which is what relative expressions like
 "next Friday" resolve against. Leave it off to talk to the bot as of today; pass
-it to reproduce a conversation from the dataset (CLAUDE.md 6.3).
+it to reproduce a conversation from the dataset (ENGINEERING.md 6.3).
 
 STATUS: scaffolding. The argument parsing and the loop shape are final; the turn
 handling is not implemented yet.

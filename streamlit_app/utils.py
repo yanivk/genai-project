@@ -17,7 +17,7 @@ def default_conversation_start() -> str:
     Relative dates resolve against this. Defaulting to now is what you want for a
     live chat; override it in the sidebar to replay a dataset conversation. The
     seeded schedule runs to the end of 2027, so today always lands inside it
-    (CLAUDE.md 6.3).
+    (ENGINEERING.md 6.3).
     """
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 

@@ -8,7 +8,7 @@ from ``settings.exit_advisor_model``, which returns the fine-tuned model when
 ``FT_EXIT_ADVISOR_MODEL`` is set and falls back to ``OPENAI_MODEL`` with few-shot
 prompting otherwise. The fallback must always keep working: the app never
 hard-fails because a fine-tuning job is missing or still running
-(CLAUDE.md 11.7).
+(ENGINEERING.md 11.7).
 
 The prompt follows the model: few-shot examples for the base model, a condensed
 file for the fine-tuned one. See :data:`PROMPT_FEWSHOT` and
@@ -18,7 +18,7 @@ Critical semantics: ``should_end`` is True for BOTH terminal outcomes — the
 interview is confirmed, and the candidate opted out. In the dataset, ``end`` is
 the last recruiter turn of every conversation: 11 happy endings and 4 opt-outs.
 Treating ``end`` as a rejection signal gets most of the class wrong
-(CLAUDE.md 6.1).
+(ENGINEERING.md 6.1).
 """
 
 from __future__ import annotations
@@ -73,7 +73,7 @@ def build_exit_chain():
     """Build the Exit Advisor chain.
 
     Shape is the taught LCEL pipe, ``prompt | llm | JsonOutputParser()``
-    (CLAUDE.md 4.4), with the system prompt loaded from
+    (ENGINEERING.md 4.4), with the system prompt loaded from
     ``app/prompts/exit_advisor.txt`` and ``temperature=0``.
 
     The system text is passed in as a *value*, not as a template, so the literal

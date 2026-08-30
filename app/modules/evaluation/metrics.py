@@ -6,7 +6,7 @@ Follows the course evaluation idiom from
 (``annot=True, fmt='d', cmap='Blues'``) + a labeled DataFrame, always alongside a
 majority-class benchmark, and always with the misclassified rows printed out.
 
-Four things every report must contain (CLAUDE.md section 10):
+Four things every report must contain (ENGINEERING.md section 10):
 
 1. accuracy **and** the majority baseline next to it
 2. the confusion matrix, with real class names on both axes
@@ -88,7 +88,7 @@ def predict_all(
         points: Decision points to score.
         cache_path: JSON file used to memoize predictions keyed by
             ``(conversation_id, turn_id)``. Re-running the notebook should not
-            re-spend tokens (CLAUDE.md 10.6). The cache is discarded whenever the
+            re-spend tokens (ENGINEERING.md 10.6). The cache is discarded whenever the
             prompts or the models change — see :func:`prediction_fingerprint`.
 
     Returns:

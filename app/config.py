@@ -15,7 +15,7 @@ the app's Secrets UI.
 Paths are absolute and derived from the repository root, so behaviour does not
 depend on the current working directory.
 
-Importing this module must never touch the network. See CLAUDE.md section 7.
+Importing this module must never touch the network. See ENGINEERING.md section 7.
 """
 
 from __future__ import annotations
@@ -91,7 +91,7 @@ def _resolve_db_url(url: str) -> str:
 class Settings:
     """Resolved configuration for the whole application.
 
-    Attributes mirror the keys documented in ``.env.example`` and CLAUDE.md
+    Attributes mirror the keys documented in ``.env.example`` and ENGINEERING.md
     section 7.
     """
 
@@ -148,7 +148,7 @@ class Settings:
         """Model the Exit Advisor should use — fine-tuned when available.
 
         Falls back to :attr:`openai_model` so the app never hard-fails because a
-        fine-tuning job is missing, expired or still running (CLAUDE.md 11.7).
+        fine-tuning job is missing, expired or still running (ENGINEERING.md 11.7).
         """
         return self.ft_exit_advisor_model or self.openai_model
 

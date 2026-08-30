@@ -4,7 +4,7 @@ Defined once, imported everywhere. Never retype the string literals — a typo i
 one branch silently disables it, and these same strings are the class labels in
 ``data/sms_conversations.json`` and in the evaluation notebook.
 
-See CLAUDE.md sections 1 and 6.1.
+See ENGINEERING.md sections 1 and 6.1.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ SCHEDULE: Final = "schedule"
 
 #: The conversation is over. Terminal in BOTH directions: the interview is
 #: confirmed, or the candidate opted out. This is the single most misread label
-#: in this project — see CLAUDE.md section 6.1.
+#: in this project — see ENGINEERING.md section 6.1.
 END: Final = "end"
 
 Action = Literal["continue", "schedule", "end"]

@@ -12,7 +12,7 @@ Layout::
     app.prompts     System prompts as .txt files.
 
 Importing this package must never touch the network or rebuild an index. Offline
-work lives in ``scripts/``. See CLAUDE.md section 2.
+work lives in ``scripts/``. See ENGINEERING.md section 2.
 """
 
 __version__ = "0.1.0"

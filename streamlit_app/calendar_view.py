@@ -2,7 +2,7 @@
 
 Presentation only — the SQL lives in ``app/modules/database/engine.py`` and the
 decision to actually offer a slot belongs to the Scheduling Advisor. This module
-draws what the schedule already says (CLAUDE.md section 2, rule 4).
+draws what the schedule already says (ENGINEERING.md section 2, rule 4).
 
 The grid is week-by-week: one row per week, one column per weekday. A day shows
 its number and how many slots are still free. Three states are worth telling
@@ -11,7 +11,7 @@ apart, and the third is the one that confuses people:
 * free slots left,
 * the day exists in the schedule but every slot is taken,
 * the day has no slots at all — Mondays and Saturdays are never seeded, and
-  nothing exists outside 09:00-17:00 (CLAUDE.md 6.3). Those columns are
+  nothing exists outside 09:00-17:00 (ENGINEERING.md 6.3). Those columns are
   legitimately always empty, so they are labeled rather than left mysterious.
 """
 

@@ -106,7 +106,7 @@ class TestConfig:
 
     def test_root_dir_holds_the_project(self):
         assert (ROOT_DIR / "app").is_dir()
-        assert (ROOT_DIR / "CLAUDE.md").is_file()
+        assert (ROOT_DIR / "ENGINEERING.md").is_file()
 
     def test_sqlite_url_is_absolute(self):
         # A relative sqlite URL resolves against the working directory, which
@@ -181,14 +181,14 @@ class TestDataset:
 
     def test_end_is_terminal(self, conversations):
         # `end` is the last recruiter turn of every conversation, covering both
-        # confirmed bookings and opt-outs. See CLAUDE.md section 6.1.
+        # confirmed bookings and opt-outs. See ENGINEERING.md section 6.1.
         for conversation in conversations:
             labeled = [t for t in conversation["turns"] if t["label"]]
             assert labeled[-1]["label"] == END
             assert all(t["label"] != END for t in labeled[:-1])
 
     def test_conversations_fall_inside_the_seeded_range(self, conversations):
-        # Invariant 1 of CLAUDE.md 6.3: relative dates anchor on start_time_utc
+        # Invariant 1 of ENGINEERING.md 6.3: relative dates anchor on start_time_utc
         # and are looked up in the Schedule table, so a conversation outside the
         # seeded range would silently find no slots.
         for conversation in conversations:
@@ -201,7 +201,7 @@ class TestDataset:
             )
 
     def test_no_message_proposes_an_unavailable_weekday(self, conversations):
-        # Invariant 2 of CLAUDE.md 6.3: the schedule has no Monday or Saturday
+        # Invariant 2 of ENGINEERING.md 6.3: the schedule has no Monday or Saturday
         # rows, so no message may propose one.
         excluded = {"Monday", "Saturday"}
         offenders = [
@@ -265,7 +265,7 @@ class TestSplit:
 
     def test_both_ending_flavours_survive_the_split(self, conversations):
         # With only 4 opt-outs, an unstratified split can leave the test set with
-        # none — and then the `end` class is untestable (CLAUDE.md 10.1).
+        # none — and then the `end` class is untestable (ENGINEERING.md 10.1).
         train, test = split_by_conversation(conversations, test_size=5, seed=42)
         by_id = {c["conversation_id"]: c for c in conversations}
         for ids in (train, test):
@@ -422,7 +422,7 @@ class TestAvailabilityCalendar:
         assert stamped.equals(calendar)
 
     def test_no_unavailable_weekday_appears(self, calendar):
-        # Invariant 2 of CLAUDE.md 6.3, seen from the query side: a day with no
+        # Invariant 2 of ENGINEERING.md 6.3, seen from the query side: a day with no
         # rows is normal, and the UI must render it as such rather than invent
         # times the schedule never had.
         weekdays = {dt.date.fromisoformat(d).weekday() for d in calendar["date"]}
@@ -536,7 +536,7 @@ class TestAvailabilityFirstScheduling:
         assert dates and set(dates) == {self.NEXT_TUESDAY}
 
     def test_a_day_the_calendar_cannot_serve_returns_nothing_for_that_day(self, db):
-        # Mondays are never seeded (CLAUDE.md 6.3). The tool must say so rather
+        # Mondays are never seeded (ENGINEERING.md 6.3). The tool must say so rather
         # than quietly answering with another day the candidate did not ask for;
         # widening is the advisor's next call, and the message must explain it.
         answer = slots_tool.invoke(
@@ -829,7 +829,7 @@ class TestFineTuningPrompt:
 
 
 class TestFineTuningDataset:
-    """The JSONL that trains the Exit Advisor (CLAUDE.md section 11)."""
+    """The JSONL that trains the Exit Advisor (ENGINEERING.md section 11)."""
 
     @pytest.fixture(scope="class")
     def split(self):
@@ -900,7 +900,7 @@ class TestFineTuningDataset:
 
         OpenAI closed self-serve fine-tuning on 2026-05-07, so `create_job` now
         always fails here. Misreading that as a bad key would send the next
-        person debugging the JSONL for nothing (CLAUDE.md 11.9).
+        person debugging the JSONL for nothing (ENGINEERING.md 11.9).
         """
 
         def error(code: str) -> PermissionDeniedError:

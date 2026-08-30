@@ -10,7 +10,7 @@ nothing to do next is a half-done answer.
 
 RAG is hand-wired the way the course taught it (``Course23/Embedding & Retrieval.ipynb``):
 retrieve with ``collection.query`` -> stuff the context into the prompt -> call
-the LLM. No ``RetrievalQA``, no ``create_retrieval_chain`` (CLAUDE.md 4.6).
+the LLM. No ``RetrievalQA``, no ``create_retrieval_chain`` (ENGINEERING.md 4.6).
 """
 
 from __future__ import annotations

@@ -16,7 +16,7 @@ and slice the results out of the returned dict.
 
 Chroma returns cosine **distance**, not similarity: range 0-2, lower is better,
 ``distance = 1 - cosine_similarity``. Any threshold written here must respect that
-direction (CLAUDE.md pitfall 7).
+direction (ENGINEERING.md pitfall 7).
 """
 
 from __future__ import annotations
@@ -116,7 +116,7 @@ def _load_seed() -> dict:
     indexed_model = seed.get("model")
     if indexed_model and indexed_model != settings.embedding_model:
         # Mixing models produces silently meaningless distances, so fail loudly
-        # instead (CLAUDE.md pitfall 6).
+        # instead (ENGINEERING.md pitfall 6).
         raise RuntimeError(
             f"{path} was built with {indexed_model!r} but OPENAI_EMBEDDING_MODEL is "
             f"{settings.embedding_model!r}. Rebuild the index or restore the model."

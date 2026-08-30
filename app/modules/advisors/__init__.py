@@ -6,7 +6,7 @@
     schemas             Pydantic output contracts for all three.
 
 Advisors are stateless. They receive the rendered conversation history as plain
-text; only the Main Agent owns memory. See CLAUDE.md sections 4.2 and 9.
+text; only the Main Agent owns memory. See ENGINEERING.md sections 4.2 and 9.
 """
 
 from app.modules.advisors.schemas import (

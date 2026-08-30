@@ -93,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
             "never run a job before that date, and closes to everyone on 2027-01-06.\n"
             "Nothing about the training data, the split or the base model changes this.\n\n"
             "The Exit Advisor keeps running on the few-shot fallback, which is exactly\n"
-            "what that fallback exists for (CLAUDE.md 11.7). Use --dry-run to rebuild\n"
+            "what that fallback exists for (ENGINEERING.md 11.7). Use --dry-run to rebuild\n"
             "and inspect the training set without calling the API."
         )
         return 2

@@ -3,7 +3,7 @@
 Follows the course pattern from ``Course23/Embedding & Retrieval.ipynb``: raw
 ``chromadb`` with explicitly computed OpenAI embeddings, and ``PyPDF2.PdfReader``
 for text extraction. No LangChain vectorstore wrapper, no ``PyPDFLoader``, no
-``RecursiveCharacterTextSplitter`` — none of those were taught (CLAUDE.md 4.6).
+``RecursiveCharacterTextSplitter`` — none of those were taught (ENGINEERING.md 4.6).
 
 The offline step writes **two** artifacts:
 
@@ -108,7 +108,7 @@ def embed(chunks: list[str]) -> list[list[float]]:
     """Compute embeddings for chunks with ``settings.embedding_model``.
 
     The query side must use this same model — mixing ``-small`` and ``-large``
-    produces silently meaningless distances (CLAUDE.md pitfall 6).
+    produces silently meaningless distances (ENGINEERING.md pitfall 6).
     """
     response = get_openai_client().embeddings.create(
         input=chunks, model=settings.embedding_model

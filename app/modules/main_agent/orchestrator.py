@@ -8,7 +8,7 @@ Multi-agent routing is plain Python, as taught in
 
 Memory uses the course's objects — a module-level ``store`` dict of
 ``ChatMessageHistory``, replayed through ``MessagesPlaceholder("history")``
-(CLAUDE.md 4.2). It does **not** use ``RunnableWithMessageHistory``: that wrapper
+(ENGINEERING.md 4.2). It does **not** use ``RunnableWithMessageHistory``: that wrapper
 appends the chain's raw output to the history, and this chain outputs a JSON
 decision object. The candidate would then "remember" the bot speaking JSON, which
 poisons every later turn. Instead the store is appended to explicitly, with the
@@ -156,7 +156,7 @@ def resolve_action(
     over ``end`` whenever both advisors fired — which is exactly the case where a
     candidate has just accepted a time, so the correct answer is always ``end``.
     Routing in code also matches the course's own multi-agent example, where
-    dispatch is a plain Python function (CLAUDE.md 4.5).
+    dispatch is a plain Python function (ENGINEERING.md 4.5).
     """
     if exit_verdict.should_end:
         return END
@@ -169,7 +169,7 @@ def build_main_agent():
     """Build the Main Agent chain.
 
     Prompt layout is mandatory and ordered ``system`` -> ``history`` -> ``user``
-    (CLAUDE.md 4.1). The system text is loaded from ``app/prompts/main_agent.txt``
+    (ENGINEERING.md 4.1). The system text is loaded from ``app/prompts/main_agent.txt``
     and passed in as a value, so the literal JSON braces in its few-shot examples
     are never read as template fields.
     """
@@ -245,7 +245,7 @@ def _decision_from(raw: str, action: Action, info_verdict: InfoVerdict) -> MainD
     formatting slip look like an outage.
 
     So the ladder is: parsed JSON, else the prose as-is, else the Info Advisor's
-    answer, else the canned line. The action is always ours (CLAUDE.md 4.5) — the
+    answer, else the canned line. The action is always ours (ENGINEERING.md 4.5) — the
     model only ever supplies wording.
     """
     text = (raw or "").strip()
@@ -284,7 +284,7 @@ def handle_turn(
         candidate_message: The candidate's latest message.
         conversation_start: ISO timestamp the conversation started. Relative
             dates ("next Friday") resolve against this, NOT against today —
-            see CLAUDE.md section 6.3. Defaults to now.
+            see ENGINEERING.md section 6.3. Defaults to now.
 
     Returns:
         The decided :class:`TurnResult`.
@@ -318,7 +318,7 @@ def predict_action(
 ) -> Action:
     """Predict the action for the next recruiter turn, given prior history.
 
-    The evaluation entry point (CLAUDE.md section 10): returns only the label,
+    The evaluation entry point (ENGINEERING.md section 10): returns only the label,
     without touching :data:`store`, so scoring a conversation cannot leak state
     into the next one.
 

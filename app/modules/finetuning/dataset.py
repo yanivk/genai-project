@@ -4,13 +4,13 @@ Turns ``data/sms_conversations.json`` into OpenAI chat-format JSONL. Each row is
 one decision point: the history up to a candidate turn, and the ``should_end``
 verdict implied by the label of the recruiter turn that followed.
 
-Two rules govern this module, both from CLAUDE.md section 11:
+Two rules govern this module, both from ENGINEERING.md section 11:
 
 1. **Training rows come from the training split only.** The held-out
    conversations never appear here. Building the JSONL from all 15 conversations
    and then evaluating on 5 of them is the easiest way to silently invalidate the
    whole evaluation.
-2. **The assistant target is the exact JSON contract from CLAUDE.md section 9**,
+2. **The assistant target is the exact JSON contract from ENGINEERING.md section 9**,
    so the fine-tuned model is a drop-in replacement for the prompted one.
 
 Both ``end`` cases must be represented: booked-and-confirmed AND
@@ -145,7 +145,7 @@ def describe(examples: list[dict]) -> str:
     Reports the row count and the ``should_end`` True/False balance, and flags
     the case where only one flavour of ``end`` (booked vs opted-out) is present —
     a model trained on opt-outs alone learns that ``end`` means rejection, which
-    is wrong for 11 of the 15 conversations (CLAUDE.md 6.1).
+    is wrong for 11 of the 15 conversations (ENGINEERING.md 6.1).
     """
     targets = [json.loads(e["messages"][-1]["content"]) for e in examples]
     ending = [t for t in targets if t["should_end"]]
@@ -167,6 +167,6 @@ def describe(examples: list[dict]) -> str:
         missing = "booked-and-confirmed" if not booked else "candidate-opted-out"
         lines.append(
             f"  WARNING: no {missing} endings. `end` is terminal in BOTH directions; "
-            "training on one flavour teaches the wrong rule (CLAUDE.md 6.1)."
+            "training on one flavour teaches the wrong rule (ENGINEERING.md 6.1)."
         )
     return "\n".join(lines)

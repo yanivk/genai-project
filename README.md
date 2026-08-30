@@ -115,7 +115,7 @@ Every turn resolves to exactly one action:
 > **Use 3.13, not 3.14.** The pins come from the course and none of them publish
 > wheels for 3.14 yet; `pip` then tries to build `tiktoken` from source and stops at
 > `error: can't find Rust compiler`. Bumping the pins instead would mean re-verifying
-> every taught snippet in `CLAUDE.md` §4, which is the one thing this project must not
+> every taught snippet in `ENGINEERING.md` §4, which is the one thing this project must not
 > do casually.
 
 ### Installation
@@ -364,7 +364,7 @@ split without it, so the fine-tuned model was never where the remaining headroom
 
 ```text
 genai-project/
-├── CLAUDE.md                  Engineering guide: architecture, conventions, pitfalls
+├── ENGINEERING.md             Engineering guide: architecture, conventions, pitfalls
 ├── README.md
 ├── LICENSE
 ├── requirements.txt

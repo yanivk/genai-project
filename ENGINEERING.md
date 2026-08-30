@@ -1,4 +1,4 @@
-# CLAUDE.md
+# Engineering guide
 
 Engineering guide for this repository. Read this before writing any code here.
 
@@ -440,7 +440,7 @@ This lives **only** in `app/config.py`. Everywhere else: `from app.config import
 
 ```
 final-project/
-├── CLAUDE.md                  This file.
+├── ENGINEERING.md             This file.
 ├── README.md                  Public project documentation.
 ├── LICENSE                    Apache-2.0.
 ├── .python-version            3.13. The pins have no 3.14 wheels (§3).

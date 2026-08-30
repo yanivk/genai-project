@@ -18,7 +18,7 @@
 # LangChain is held at the 0.3.x line on purpose: the Course22 notebooks were
 # authored against 0.3.x, and in LangChain 1.x two taught imports are already
 # broken (`langchain.memory.ChatMessageHistory`, `langchain.output_parsers`).
-# Do not bump without re-verifying every snippet in CLAUDE.md section 4.
+# Do not bump without re-verifying every snippet in ENGINEERING.md section 4.
 
 # --- LangChain -----------------------------------------------------------
 langchain==0.3.25

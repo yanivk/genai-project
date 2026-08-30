@@ -13,7 +13,7 @@ bot message is kept in the transcript (it is what closes the conversation on
 ``end``) but never printed. The sidebar carries the settings, the availability
 calendar, and a collapsed expander with the last advisor verdicts for debugging.
 
-UI only — every decision is made in ``app/`` (CLAUDE.md section 2, rule 4).
+UI only — every decision is made in ``app/`` (ENGINEERING.md section 2, rule 4).
 """
 
 from __future__ import annotations

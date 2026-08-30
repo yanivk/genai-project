@@ -9,7 +9,7 @@ only caller is ``scripts/run_finetuning.py``, invoked by hand.
 
 Once the job succeeds, write the model id into ``.env`` as
 ``FT_EXIT_ADVISOR_MODEL``. Until then the Exit Advisor keeps running on the base
-model with few-shot prompting (CLAUDE.md 11.7).
+model with few-shot prompting (ENGINEERING.md 11.7).
 
 **OpenAI closed self-serve fine-tuning on 2026-05-07.** Organizations that had
 never run a job before that date can no longer create one: the API answers 403
@@ -22,7 +22,7 @@ This project's organization is on the wrong side of that date, so
 requested deliverable and it is exercised as far as the API allows (the upload in
 :func:`upload_training_file` succeeds) — and the failure is translated into
 :class:`FineTuningUnavailable` so the script explains itself instead of printing a
-stack trace. See CLAUDE.md 11.9.
+stack trace. See ENGINEERING.md 11.9.
 """
 
 from __future__ import annotations

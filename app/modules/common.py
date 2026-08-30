@@ -1,7 +1,7 @@
 """Shared helpers for prompts, models and history rendering.
 
 Small internal utilities used by every agent module, so the course patterns from
-CLAUDE.md section 4 are written once rather than copy-pasted four times.
+ENGINEERING.md section 4 are written once rather than copy-pasted four times.
 
 Prompt-file placeholders are substituted with plain ``str.replace``, never
 ``str.format``: the prompt files contain literal JSON braces in their few-shot
@@ -59,7 +59,7 @@ def get_llm(model: str | None = None, temperature: float = 0.0) -> ChatOpenAI:
     """Build a chat model.
 
     ``temperature=0`` by default: every advisor and the router are making
-    decisions, and those must be reproducible (CLAUDE.md section 8).
+    decisions, and those must be reproducible (ENGINEERING.md section 8).
 
     Args:
         model: Model id. Defaults to ``settings.openai_model``.
@@ -81,7 +81,7 @@ def get_openai_client() -> OpenAI:
 
 #: How each speaker is labelled when history is rendered for a model. The same
 #: labels are used at fine-tuning time, so training and inference see identical
-#: input (CLAUDE.md section 11).
+#: input (ENGINEERING.md section 11).
 SPEAKER_LABELS = {"recruiter": "Recruiter", "candidate": "Candidate"}
 
 

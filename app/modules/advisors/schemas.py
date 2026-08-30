@@ -7,7 +7,7 @@ is the guard that stops a malformed LLM response from propagating into the
 router.
 
 ``with_structured_output`` is deliberately not used — it was not taught in the
-course and is not part of the pinned stack. See CLAUDE.md section 9.
+course and is not part of the pinned stack. See ENGINEERING.md section 9.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ class ExitVerdict(BaseModel):
 
     ``should_end`` is True for BOTH terminal cases — the interview is confirmed,
     and the candidate opted out. It is not a "candidate is uninterested" flag.
-    See CLAUDE.md section 6.1.
+    See ENGINEERING.md section 6.1.
     """
 
     should_end: bool = Field(description="True when the conversation should close now.")
@@ -46,7 +46,7 @@ class SchedulingVerdict(BaseModel):
     ``needs_availability``. The bot does not hand out dates unprompted — it asks
     the candidate when they are free, then looks that window up in the schedule.
     So the first scheduling turn carries no slots at all: there is no date to
-    search on yet. See CLAUDE.md section 4.12.
+    search on yet. See ENGINEERING.md section 4.12.
     """
 
     should_schedule: bool = Field(description="True when it is the right moment to schedule.")
