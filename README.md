@@ -8,6 +8,10 @@
 <p align="center">
   A multi-agent SMS-style chatbot that screens candidates, answers their questions,<br>
   and books an interview — or closes the conversation politely.<br>
+  <strong>Presented by:</strong><br>
+  Yaniv Koby - <br>
+  Sarig Wohlstein - 046234415 <br>
+  Moshe Swisa - 060635836 <br>
   <a href="#usage">Usage</a>
   ·
   <a href="#evaluation">Evaluation</a>
