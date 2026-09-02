@@ -112,6 +112,8 @@ Every turn resolves to exactly one action:
 
 ## Getting Started
 
+Follow these instructions to set up the multi-agent chatbot on your local environment for development and testing.
+
 ### Prerequisites
 
 - **Python 3.13** — see the note below
