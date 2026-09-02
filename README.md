@@ -365,7 +365,6 @@ split without it, so the fine-tuned model was never where the remaining headroom
 
 ```text
 genai-project/
-├── ENGINEERING.md             Engineering guide: architecture, conventions, pitfalls
 ├── README.md
 ├── LICENSE
 ├── requirements.txt
