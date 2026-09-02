@@ -35,6 +35,7 @@
 - [Deployment](#deployment)
 - [To-Do List](#to-do-list)
 - [License](#license)
+- [Contact](#contact)
 - [Acknowledgments](#acknowledgments)
 
 ---
@@ -452,6 +453,16 @@ Four things make that work:
 ## License
 
 Distributed under the Apache License 2.0. See `LICENSE` for more information.
+
+---
+<br></br>
+
+## Contact
+
+<strong>Yaniv Koby - ID:</strong> 346546716, <strong>Email:</strong> Yanivkoubbi@gmail.com <br>
+<strong>Sarig Wohlstein - ID:</strong> 046234415, <strong>Email:</strong> Sarigw@gmail.com <br>
+<strong>Moshe Swisa - ID:</strong> 060635836, <strong>Email:</strong> Mswissa@gmail.com <br>
+<strong>Project Link:</strong> https://github.com/yanivk/genai-project/
 
 ---
 <br></br>
