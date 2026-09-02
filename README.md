@@ -117,11 +117,7 @@ Every turn resolves to exactly one action:
 - **Python 3.13** — see the note below
 - An OpenAI API key
 
-> **Use 3.13, not 3.14.** The pins come from the course and none of them publish
-> wheels for 3.14 yet; `pip` then tries to build `tiktoken` from source and stops at
-> `error: can't find Rust compiler`. Bumping the pins instead would mean re-verifying
-> every taught snippet in `ENGINEERING.md` §4, which is the one thing this project must not
-> do casually.
+> **Use 3.13, not 3.14.**
 
 ### Installation
 
